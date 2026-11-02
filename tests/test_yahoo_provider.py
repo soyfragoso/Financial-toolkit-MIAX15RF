@@ -26,8 +26,54 @@ def test_yahoo_provider_rejects_invalid_dates():
         )
 
 
-def test_yahoo_provider_rejects_empty_response(monkeypatch):
+@pytest.mark.parametrize(
+    "start, end",
+    [
+        ("invalid-date", "2025-01-31"),
+        ("2025-01-01", "2025/01/31"),
+    ]
+)
+def test_yahoo_provider_rejects_malformed_dates(start, end):
+    provider = YahooFinanceProvider()
 
+    with pytest.raises(ValueError):
+        provider.download_prices(
+            ["AAPL"],
+            start,
+            end
+        )
+
+
+def test_yahoo_provider_rejects_non_string_tickers():
+    provider = YahooFinanceProvider()
+
+    with pytest.raises(ValueError):
+        provider.download_prices(
+            ["AAPL", None],
+            "2025-01-01",
+            "2025-01-31"
+        )
+
+
+@pytest.mark.parametrize(
+    "tickers",
+    [
+        [""],
+        ["   "],
+    ]
+)
+def test_yahoo_provider_rejects_blank_tickers(tickers):
+    provider = YahooFinanceProvider()
+
+    with pytest.raises(ValueError):
+        provider.download_prices(
+            tickers,
+            "2025-01-01",
+            "2025-01-31"
+        )
+
+
+def test_yahoo_provider_rejects_empty_response(monkeypatch):
     provider = YahooFinanceProvider()
 
     def fake_download(**kwargs):
@@ -47,7 +93,6 @@ def test_yahoo_provider_rejects_empty_response(monkeypatch):
 
 
 def test_yahoo_provider_normalizes_single_ticker(monkeypatch):
-
     provider = YahooFinanceProvider()
 
     raw_data = pd.DataFrame({
@@ -84,7 +129,6 @@ def test_yahoo_provider_normalizes_single_ticker(monkeypatch):
 
 
 def test_yahoo_provider_normalizes_multiple_tickers(monkeypatch):
-
     provider = YahooFinanceProvider()
 
     dates = pd.to_datetime([
@@ -140,4 +184,3 @@ def test_yahoo_provider_normalizes_multiple_tickers(monkeypatch):
         "adj_close",
         "volume"
     }
-    
