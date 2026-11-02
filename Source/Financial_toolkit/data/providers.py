@@ -52,7 +52,9 @@ class YahooFinanceProvider(DataProvider):
             raise ValueError("Los tickers no pueden estar vacíos.")
 
         if start >= end:
-            raise ValueError("La fecha inicial debe ser anterior a la final.")
+            raise ValueError(
+                "La fecha inicial debe ser anterior a la final."
+            )
 
         raw_data = yf.download(
             tickers=tickers,
@@ -86,12 +88,12 @@ class YahooFinanceProvider(DataProvider):
             if isinstance(raw_data.columns, pd.MultiIndex):
 
                 if ticker in raw_data.columns.get_level_values(0):
-                    asset_data = raw_data[ticker]
+                    asset_data = raw_data[ticker].copy()
 
                 elif ticker in raw_data.columns.get_level_values(1):
                     asset_data = raw_data.xs(
                         ticker, axis=1, level=1
-                    )
+                    ).copy()
 
                 else:
                     continue
@@ -100,7 +102,7 @@ class YahooFinanceProvider(DataProvider):
                 if len(tickers) != 1:
                     continue
 
-                asset_data = raw_data
+                asset_data = raw_data.copy()
 
             # Normalizar nombres de columnas.
             asset_data = asset_data.rename(columns={
