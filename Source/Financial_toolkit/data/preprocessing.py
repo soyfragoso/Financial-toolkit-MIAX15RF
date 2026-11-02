@@ -1,3 +1,4 @@
+import numpy as np
 import pandas as pd
 
 
@@ -65,6 +66,22 @@ class DataPreprocessor:
                     errors="coerce"
                 )
 
+        # Rechazar valores infinitos en columnas numéricas.
+        for column in self.NUMERIC_COLUMNS:
+            if column in result.columns:
+                values = result[column].dropna().to_numpy(dtype=float)
+
+                if not np.isfinite(values).all():
+                    raise ValueError(
+                        f"La columna {column} contiene valores no finitos."
+                    )
+
+        # Los precios de cierre deben ser estrictamente positivos.
+        if (result["close"].dropna() <= 0).any():
+            raise ValueError(
+                "Los precios de cierre deben ser positivos."
+            )
+
         # Eliminar registros sin información esencial.
         result = result.dropna(
             subset=self.REQUIRED_COLUMNS
@@ -113,5 +130,4 @@ class DataPreprocessor:
             ["ticker", "date"]
         ).reset_index(drop=True)
 
-        return result
         return result

@@ -127,3 +127,25 @@ def test_rejects_invalid_confidence_level(portfolio):
 
     with pytest.raises(ValueError):
         simulator.conditional_value_at_risk(0)
+
+
+def test_portfolio_monte_carlo_method(portfolio):
+    simulator = portfolio.monte_carlo(
+        initial_value=100_000,
+        days=10,
+        simulations=50,
+        seed=42,
+    )
+
+    from Financial_toolkit.simulation.monte_carlo import (
+        PortfolioMonteCarloSimulator,
+    )
+
+    assert isinstance(simulator, PortfolioMonteCarloSimulator)
+
+    paths = simulator.simulate()
+
+    assert paths.shape == (11, 50)
+    assert len(simulator.final_values()) == 50
+    assert isinstance(simulator.value_at_risk(), float)
+    assert isinstance(simulator.conditional_value_at_risk(), float)

@@ -106,4 +106,3 @@ def test_simulator_rejects_invalid_simulations():
 def test_simulator_rejects_invalid_confidence_level(simulator):
     with pytest.raises(ValueError):
         simulator.value_at_risk(confidence_level=1.0)
-        

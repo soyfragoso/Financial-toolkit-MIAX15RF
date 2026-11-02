@@ -1,11 +1,25 @@
+from dataclasses import dataclass, field
+
 import numpy as np
 import pandas as pd
 
 
+@dataclass(init=False)
 class PriceSeries:
     """
     Representa la serie histórica de precios de un activo financiero.
+
+    Incluye estadísticas descriptivas, medias móviles y métricas de riesgo.
     """
+
+    ticker: str
+    prices: pd.Series
+    mean: float = field(init=False)
+    median: float = field(init=False)
+    std: float = field(init=False)
+    variance: float = field(init=False)
+    minimum: float = field(init=False)
+    maximum: float = field(init=False)
 
     def __init__(
         self,
@@ -57,8 +71,18 @@ class PriceSeries:
         self.ticker = ticker.strip().upper()
         self.prices = clean_prices.astype(float).sort_index()
 
+        self.mean = float(self.prices.mean())
+        self.median = float(self.prices.median())
+        self.std = float(self.prices.std(ddof=1)) if len(self.prices) > 1 else 0.0
+        self.variance = (
+            float(self.prices.var(ddof=1)) if len(self.prices) > 1 else 0.0
+        )
+        self.minimum = float(self.prices.min())
+        self.maximum = float(self.prices.max())
+
     @property
     def dates(self) -> pd.DatetimeIndex:
+        """Devuelve las fechas de observación."""
         return pd.DatetimeIndex(self.prices.index)
 
     def returns(self) -> pd.Series:
@@ -68,6 +92,71 @@ class PriceSeries:
     def log_returns(self) -> pd.Series:
         """Calcula las rentabilidades logarítmicas."""
         return np.log(self.prices / self.prices.shift(1)).dropna()
+
+    def moving_average(self, window: int = 20) -> pd.Series:
+        """
+        Calcula la media móvil simple conservando el índice de fechas.
+
+        Los primeros window - 1 valores serán NaN.
+        """
+        if isinstance(window, bool) or not isinstance(window, int) or window <= 0:
+            raise ValueError("La ventana debe ser un entero positivo.")
+
+        return self.prices.rolling(window=window).mean()
+
+    def maximum_drawdown(self) -> float:
+        """
+        Calcula la máxima caída porcentual desde un máximo histórico.
+        """
+        running_maximum = self.prices.cummax()
+        drawdowns = self.prices / running_maximum - 1
+
+        return float(drawdowns.min())
+
+    def annualized_volatility(self, periods: int = 252) -> float:
+        """
+        Calcula la volatilidad anualizada de los rendimientos simples.
+        """
+        if isinstance(periods, bool) or not isinstance(periods, int) or periods <= 0:
+            raise ValueError("Los períodos deben ser un entero positivo.")
+
+        historical_returns = self.returns()
+
+        if len(historical_returns) < 2:
+            raise ValueError(
+                "Se necesitan al menos dos rendimientos para calcular "
+                "la volatilidad."
+            )
+
+        return float(historical_returns.std(ddof=1) * np.sqrt(periods))
+
+    def skewness(self) -> float:
+        """Calcula la asimetría de la distribución de rendimientos."""
+        historical_returns = self.returns()
+
+        if len(historical_returns) < 3:
+            raise ValueError(
+                "Se necesitan al menos tres rendimientos para calcular "
+                "la asimetría."
+            )
+
+        return float(historical_returns.skew())
+
+    def kurtosis(self) -> float:
+        """
+        Calcula la curtosis excedente de los rendimientos.
+
+        Un valor cercano a cero indica una curtosis similar a la normal.
+        """
+        historical_returns = self.returns()
+
+        if len(historical_returns) < 4:
+            raise ValueError(
+                "Se necesitan al menos cuatro rendimientos para calcular "
+                "la curtosis."
+            )
+
+        return float(historical_returns.kurt())
 
     def to_dataframe(self) -> pd.DataFrame:
         """Devuelve los precios en formato DataFrame."""

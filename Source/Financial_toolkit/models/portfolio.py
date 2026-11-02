@@ -92,3 +92,48 @@ class Portfolio:
             raise ValueError("Se necesitan al menos dos rentabilidades.")
 
         return float(portfolio_returns.std(ddof=1) * np.sqrt(periods))
+
+    def report(self, periods: int = 252) -> str:
+        """
+        Genera un informe Markdown con las métricas y diagnósticos
+        de la cartera.
+        """
+        from Financial_toolkit.analytics.reports import (
+            generate_portfolio_report,
+        )
+
+        return generate_portfolio_report(self, periods=periods)
+
+    def plots_report(self, show: bool = True):
+        """
+        Genera las visualizaciones de rendimiento y riesgo de la cartera.
+        """
+        from Financial_toolkit.analytics.plots import (
+            generate_portfolio_plots,
+        )
+
+        return generate_portfolio_plots(self, show=show)
+
+    def monte_carlo(
+        self,
+        initial_value: float = 100_000,
+        days: int = 252,
+        simulations: int = 1000,
+        seed: int | None = None,
+    ):
+        """
+        Crea un simulador Monte Carlo para la cartera.
+
+        Devuelve una instancia de PortfolioMonteCarloSimulator.
+        """
+        from Financial_toolkit.simulation.monte_carlo import (
+            PortfolioMonteCarloSimulator,
+        )
+
+        return PortfolioMonteCarloSimulator(
+            portfolio=self,
+            initial_value=initial_value,
+            days=days,
+            simulations=simulations,
+            seed=seed,
+        )

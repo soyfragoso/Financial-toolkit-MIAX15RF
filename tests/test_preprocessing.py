@@ -96,3 +96,38 @@ def test_preprocess_does_not_modify_original_data(sample_data):
     DataPreprocessor().preprocess(sample_data)
 
     pd.testing.assert_frame_equal(sample_data, original)
+
+
+@pytest.mark.parametrize("close", [0, -10])
+def test_preprocess_rejects_non_positive_close(close):
+    data = pd.DataFrame({
+        "ticker": ["AAPL"],
+        "date": ["2025-01-02"],
+        "close": [close],
+    })
+
+    with pytest.raises(ValueError, match="cierre"):
+        DataPreprocessor().preprocess(data)
+
+
+def test_preprocess_rejects_infinite_numeric_values():
+    data = pd.DataFrame({
+        "ticker": ["AAPL"],
+        "date": ["2025-01-02"],
+        "close": [float("inf")],
+    })
+
+    with pytest.raises(ValueError, match="finitos"):
+        DataPreprocessor().preprocess(data)
+
+
+def test_preprocess_removes_blank_tickers():
+    data = pd.DataFrame({
+        "ticker": ["   ", "AAPL"],
+        "date": ["2025-01-02", "2025-01-03"],
+        "close": [100, 105],
+    })
+
+    result = DataPreprocessor().preprocess(data)
+
+    assert result["ticker"].tolist() == ["AAPL"]
