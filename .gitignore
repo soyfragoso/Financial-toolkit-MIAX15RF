@@ -218,3 +218,19 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+gitignore
+# Additional Financial Toolkit configuration
+
+# IDE
+.idea/
+.vscode/
+
+# Generated financial data
+*.csv
+*.xlsx
+*.parquet
+
+# Temporary files
+*.tmp
+*.bak
