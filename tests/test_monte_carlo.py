@@ -106,3 +106,63 @@ def test_simulator_rejects_invalid_simulations():
 def test_simulator_rejects_invalid_confidence_level(simulator):
     with pytest.raises(ValueError):
         simulator.value_at_risk(confidence_level=1.0)
+@pytest.mark.parametrize(
+    "parameter",
+    ["initial_price", "expected_return", "volatility"],
+)
+def test_simulator_rejects_boolean_parameters(parameter):
+    params = {
+        "initial_price": 100,
+        "expected_return": 0.08,
+        "volatility": 0.20,
+    }
+
+    params[parameter] = True
+
+    with pytest.raises(ValueError):
+        MonteCarloSimulator(**params)
+
+@pytest.mark.parametrize("seed", ["42", -1, 42.5, True])
+def test_simulator_rejects_invalid_seed(seed):
+    with pytest.raises(ValueError):
+        MonteCarloSimulator(
+            initial_price=100,
+            expected_return=0.08,
+            volatility=0.20,
+            seed=seed,
+        )
+def test_var_and_cvar_reuse_same_simulation(simulator, monkeypatch):
+    calls = 0
+    original_simulate = simulator.simulate
+
+    def counted_simulate():
+        nonlocal calls
+        calls += 1
+        return original_simulate()
+
+    monkeypatch.setattr(simulator, "simulate", counted_simulate)
+
+    simulator.value_at_risk()
+    simulator.conditional_value_at_risk()
+
+    assert calls == 1
+
+
+def test_reset_generates_new_simulation(simulator, monkeypatch):
+    calls = 0
+    original_simulate = simulator.simulate
+
+    def counted_simulate():
+        nonlocal calls
+        calls += 1
+        return original_simulate()
+
+    monkeypatch.setattr(simulator, "simulate", counted_simulate)
+
+    simulator.final_values()
+    assert calls == 1
+
+    simulator.reset()
+    simulator.final_values()
+
+    assert calls == 2

@@ -56,9 +56,8 @@ def test_report_contains_performance_metrics(portfolio):
 def test_report_contains_risk_diagnostics(portfolio):
     report = generate_portfolio_report(portfolio)
 
-    assert "Diagnóstico de riesgo" in report
     assert "Advertencia" in report
-
+    assert "inferior a un año de negociación" in report
 
 def test_report_contains_methodology(portfolio):
     report = generate_portfolio_report(portfolio)
@@ -89,3 +88,64 @@ def test_portfolio_report_method(portfolio):
     assert "# Informe de análisis de cartera" in report
     assert "AAA" in report
     assert "BBB" in report
+
+
+@pytest.mark.parametrize(
+    "periods",
+    [True, False, -1, 1.5, "252", None],
+)
+def test_report_rejects_invalid_period_types(portfolio, periods):
+    with pytest.raises(ValueError):
+        generate_portfolio_report(portfolio, periods=periods)
+
+
+def test_report_warns_about_concentrated_portfolio(portfolio):
+    report = generate_portfolio_report(portfolio)
+
+    assert "presenta concentración" in report
+    assert "al menos el 50 %" in report
+
+
+def test_report_warns_about_high_volatility():
+    dates = pd.date_range("2024-01-01", periods=100)
+
+    prices_a = pd.Series(
+        [100 * (1.05 if i % 2 == 0 else 0.95) for i in range(100)],
+        index=dates,
+    )
+
+    prices_b = pd.Series(
+        np.linspace(100, 110, 100),
+        index=dates,
+    )
+
+    portfolio = Portfolio()
+    portfolio.add_asset(PriceSeries("VOL", prices_a), 0.5)
+    portfolio.add_asset(PriceSeries("STABLE", prices_b), 0.5)
+
+    report = generate_portfolio_report(portfolio)
+
+    assert "volatilidad anualizada es elevada" in report
+    assert "30 % o superior" in report
+
+
+def test_report_warns_about_negative_annualized_return():
+    dates = pd.date_range("2024-01-01", periods=100)
+
+    prices_a = pd.Series(
+        np.linspace(100, 70, 100),
+        index=dates,
+    )
+
+    prices_b = pd.Series(
+        np.linspace(100, 80, 100),
+        index=dates,
+    )
+
+    portfolio = Portfolio()
+    portfolio.add_asset(PriceSeries("DOWN_A", prices_a), 0.5)
+    portfolio.add_asset(PriceSeries("DOWN_B", prices_b), 0.5)
+
+    report = generate_portfolio_report(portfolio)
+
+    assert "rentabilidad anualizada histórica es negativa" in report

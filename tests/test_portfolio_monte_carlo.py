@@ -149,3 +149,153 @@ def test_portfolio_monte_carlo_method(portfolio):
     assert len(simulator.final_values()) == 50
     assert isinstance(simulator.value_at_risk(), float)
     assert isinstance(simulator.conditional_value_at_risk(), float)
+
+@pytest.mark.parametrize("seed", ["42", -1, 42.5, True])
+def test_portfolio_simulator_rejects_invalid_seed(portfolio, seed):
+    with pytest.raises(ValueError):
+        PortfolioMonteCarloSimulator(portfolio, seed=seed)
+
+
+@pytest.mark.parametrize(
+    "covariance",
+    [
+        np.array([[np.nan, 0.0], [0.0, 1.0]]),
+        np.array([[np.inf, 0.0], [0.0, 1.0]]),
+    ],
+)
+def test_simulator_rejects_non_finite_covariance(
+    portfolio, monkeypatch, covariance
+):
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "cov",
+        lambda self: pd.DataFrame(covariance),
+    )
+
+    simulator = PortfolioMonteCarloSimulator(
+        portfolio, days=1, simulations=10, seed=42
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="matriz de covarianzas contiene valores no finitos",
+    ):
+        simulator.simulate()
+
+
+def test_simulator_rejects_non_symmetric_covariance(
+    portfolio, monkeypatch
+):
+    covariance = np.array([
+        [1.0, 0.2],
+        [0.4, 1.0],
+    ])
+
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "cov",
+        lambda self: pd.DataFrame(covariance),
+    )
+
+    simulator = PortfolioMonteCarloSimulator(
+        portfolio, days=1, simulations=10, seed=42
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="debe ser simétrica",
+    ):
+        simulator.simulate()
+
+
+def test_simulator_rejects_non_positive_semidefinite_covariance(
+    portfolio, monkeypatch
+):
+    covariance = np.array([
+        [1.0, 2.0],
+        [2.0, 1.0],
+    ])
+
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "cov",
+        lambda self: pd.DataFrame(covariance),
+    )
+
+    simulator = PortfolioMonteCarloSimulator(
+        portfolio, days=1, simulations=10, seed=42
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="no es semidefinida positiva",
+    ):
+        simulator.simulate()
+
+
+def test_simulator_accepts_singular_covariance(
+    portfolio, monkeypatch
+):
+    covariance = np.array([
+        [1.0, 1.0],
+        [1.0, 1.0],
+    ])
+
+    monkeypatch.setattr(
+        pd.DataFrame,
+        "cov",
+        lambda self: pd.DataFrame(covariance),
+    )
+
+    simulator = PortfolioMonteCarloSimulator(
+        portfolio, days=5, simulations=20, seed=42
+    )
+
+    result = simulator.simulate()
+
+    assert result.shape == (6, 20)
+    assert np.isfinite(result.to_numpy()).all()
+    assert (result.to_numpy() > 0).all()
+def test_var_and_cvar_reuse_same_simulation(portfolio, monkeypatch):
+    simulator = PortfolioMonteCarloSimulator(
+        portfolio, days=10, simulations=100, seed=42
+    )
+
+    calls = 0
+    original_simulate = simulator.simulate
+
+    def counted_simulate():
+        nonlocal calls
+        calls += 1
+        return original_simulate()
+
+    monkeypatch.setattr(simulator, "simulate", counted_simulate)
+
+    simulator.value_at_risk()
+    simulator.conditional_value_at_risk()
+
+    assert calls == 1
+
+
+def test_reset_generates_new_simulation(portfolio, monkeypatch):
+    simulator = PortfolioMonteCarloSimulator(
+        portfolio, days=10, simulations=100, seed=42
+    )
+
+    calls = 0
+    original_simulate = simulator.simulate
+
+    def counted_simulate():
+        nonlocal calls
+        calls += 1
+        return original_simulate()
+
+    monkeypatch.setattr(simulator, "simulate", counted_simulate)
+
+    simulator.final_values()
+    assert calls == 1
+
+    simulator.reset()
+    simulator.final_values()
+
+    assert calls == 2

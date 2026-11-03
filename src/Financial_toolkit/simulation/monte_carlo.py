@@ -1,3 +1,5 @@
+from numbers import Integral, Real
+
 import numpy as np
 import pandas as pd
 from Financial_toolkit.models.portfolio import Portfolio
@@ -17,14 +19,28 @@ class MonteCarloSimulator:
         simulations: int = 1000,
         seed: int | None = None,
     ):
-        if not np.isfinite(initial_price) or initial_price <= 0:
+        if (
+            isinstance(initial_price, bool)
+            or not isinstance(initial_price, Real)
+            or not np.isfinite(initial_price)
+            or initial_price <= 0
+        ):
             raise ValueError("El precio inicial debe ser positivo y finito.")
 
-        if not np.isfinite(expected_return):
-            raise ValueError("La rentabilidad esperada debe ser finita.")
+        if (
+            isinstance(expected_return, bool)
+            or not isinstance(expected_return, Real)
+            or not np.isfinite(expected_return)
+        ):
+            raise ValueError("La rentabilidad esperada debe ser numérica y finita.")
 
-        if not np.isfinite(volatility) or volatility < 0:
-            raise ValueError("La volatilidad debe ser finita y no negativa.")
+        if (
+            isinstance(volatility, bool)
+            or not isinstance(volatility, Real)
+            or not np.isfinite(volatility)
+            or volatility < 0
+        ):
+            raise ValueError("La volatilidad debe ser numérica, finita y no negativa.")
 
         if isinstance(days, bool) or not isinstance(days, int) or days <= 0:
             raise ValueError("Los días deben ser un entero positivo.")
@@ -36,12 +52,20 @@ class MonteCarloSimulator:
         ):
             raise ValueError("El número de simulaciones debe ser positivo.")
 
+        if seed is not None and (
+            isinstance(seed, bool)
+            or not isinstance(seed, Integral)
+            or seed < 0
+        ):
+            raise ValueError("La semilla debe ser un entero no negativo o None.")
+
         self.initial_price = float(initial_price)
         self.expected_return = float(expected_return)
         self.volatility = float(volatility)
         self.days = days
         self.simulations = simulations
         self.seed = seed
+        self._last_simulation = None
 
     def simulate(self) -> pd.DataFrame:
         """
@@ -70,18 +94,28 @@ class MonteCarloSimulator:
 
         prices = self.initial_price * np.exp(log_prices)
 
-        return pd.DataFrame(
+        result = pd.DataFrame(
             prices,
             columns=[
                 f"simulation_{i + 1}"
                 for i in range(self.simulations)
             ],
         )
+        self._last_simulation = result
+        return result
 
     def final_values(self) -> pd.Series:
-        """Devuelve el precio final de cada simulación."""
+        """Devuelve los valores finales de la última simulación."""
 
-        return self.simulate().iloc[-1]
+        if self._last_simulation is None:
+            self.simulate()
+
+        return self._last_simulation.iloc[-1]
+
+    def reset(self) -> None:
+        """Descarta las trayectorias almacenadas para el análisis de riesgo."""
+
+        self._last_simulation = None
 
     def value_at_risk(self, confidence_level: float = 0.95) -> float:
         """
@@ -162,6 +196,13 @@ class PortfolioMonteCarloSimulator:
         ):
             raise ValueError("El número de simulaciones debe ser positivo.")
 
+        if seed is not None and (
+            isinstance(seed, bool)
+            or not isinstance(seed, Integral)
+            or seed < 0
+        ):
+            raise ValueError("La semilla debe ser un entero no negativo o None.")
+
         portfolio.validate_weights()
 
         self.portfolio = portfolio
@@ -169,6 +210,7 @@ class PortfolioMonteCarloSimulator:
         self.days = days
         self.simulations = simulations
         self.seed = seed
+        self._last_simulation = None
 
     def simulate(self) -> pd.DataFrame:
         """Genera trayectorias del valor total de la cartera."""
@@ -193,6 +235,34 @@ class PortfolioMonteCarloSimulator:
         covariance = np.atleast_2d(
             historical_returns.cov().to_numpy()
         )
+
+        if not np.isfinite(mean_returns).all():
+            raise ValueError(
+                "Los rendimientos históricos contienen valores no finitos."
+            )
+
+        if not np.isfinite(covariance).all():
+            raise ValueError(
+                "La matriz de covarianzas contiene valores no finitos."
+            )
+
+        if not np.allclose(
+            covariance,
+            covariance.T,
+            rtol=1e-10,
+            atol=1e-12,
+        ):
+            raise ValueError(
+                "La matriz de covarianzas debe ser simétrica."
+            )
+
+        covariance = (covariance + covariance.T) / 2
+        eigenvalues = np.linalg.eigvalsh(covariance)
+
+        if eigenvalues.min() < -1e-10:
+            raise ValueError(
+                "La matriz de covarianzas no es semidefinida positiva."
+            )
 
         latest_prices = np.array([
             self.portfolio.assets[ticker].prices.iloc[-1]
@@ -239,18 +309,28 @@ class PortfolioMonteCarloSimulator:
             axis=2,
         )
 
-        return pd.DataFrame(
+        result = pd.DataFrame(
             portfolio_values,
             columns=[
                 f"simulation_{i + 1}"
                 for i in range(self.simulations)
             ],
         )
+        self._last_simulation = result
+        return result
 
     def final_values(self) -> pd.Series:
-        """Devuelve el valor final de cada simulación."""
+        """Devuelve los valores finales de la última simulación."""
 
-        return self.simulate().iloc[-1]
+        if self._last_simulation is None:
+            self.simulate()
+
+        return self._last_simulation.iloc[-1]
+
+    def reset(self) -> None:
+        """Descarta las trayectorias almacenadas para el análisis de riesgo."""
+
+        self._last_simulation = None
 
     def value_at_risk(self, confidence_level: float = 0.95) -> float:
         """Calcula el VaR como pérdida monetaria respecto al valor inicial."""
