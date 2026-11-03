@@ -27,8 +27,8 @@ dev = [
 ]
 
 [tool.setuptools]
-package-dir = {"" = "Source"}
+package-dir = {"" = "src"}
 
 [tool.setuptools.packages.find]
-where = ["Source"]
+where = ["src"]
 
