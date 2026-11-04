@@ -1,11 +1,11 @@
 
 """
-Financial Toolkit — Interactive Portfolio Assistant
+MIAX 15 Financial Powertool (miniagente interactivo)
 
 Run from the project root:
     python examples/example_portfolio.py
 
-The assistant uses the Financial_toolkit package without modifying
+The miniagent uses the Financial_toolkit package without modifying
 its core financial logic.
 """
 
@@ -17,6 +17,8 @@ import subprocess
 import sys
 from datetime import date, datetime, timedelta
 from pathlib import Path
+
+from rich.panel import Panel
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -30,6 +32,31 @@ from Financial_toolkit.data.providers import (
 from Financial_toolkit.models.portfolio import Portfolio
 from Financial_toolkit.models.price_series import PriceSeries
 
+from Financial_toolkit.cli.banners import (
+    show_welcome,
+    show_module_banner,
+    show_goodbye,
+)
+
+from Financial_toolkit.cli.interface import (
+    console,
+    print_section,
+    print_success,
+    print_warning,
+    print_error,
+    print_info,
+    print_table,
+    print_quality_status,
+    show_progress,
+)
+
+from Financial_toolkit.cli.formatting import (
+    format_currency,
+    format_percentage,
+    format_date,
+    format_change,
+    format_number,
+)
 
 # ---------------------------------------------------------------------
 # Configuration
@@ -38,21 +65,20 @@ from Financial_toolkit.models.price_series import PriceSeries
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 OUTPUT_ROOT = PROJECT_ROOT / "outputs"
 
-
 # ---------------------------------------------------------------------
 # Terminal interface and input validation
 # ---------------------------------------------------------------------
 
 def print_header(title: str) -> None:
-    print("\n" + "=" * 68)
-    print(f"  {title}")
-    print("=" * 68)
+    print_section(title)
 
 
 def ask_text(prompt: str, default: str | None = None) -> str:
     while True:
-        suffix = f" [{default}]" if default is not None else ""
-        value = input(f"{prompt}{suffix}: ").strip()
+        value = console.input(
+            f"[bold cyan]{prompt}[/bold cyan]"
+            f"{f' [{default}]' if default is not None else ''}: "
+        ).strip()
 
         if not value and default is not None:
             return default
@@ -60,32 +86,36 @@ def ask_text(prompt: str, default: str | None = None) -> str:
         if value:
             return value
 
-        print("  Introduce un valor válido.")
+        print_warning("Introduce un valor válido.")
 
 
 def ask_choice(prompt: str, options: dict[str, str]) -> str:
+    print_section(prompt)
+
+    rows = [
+        (key, description)
+        for key, description in options.items()
+    ]
+
+    print_table("Opciones disponibles", ["Opción", "Descripción"], rows)
+
     while True:
-        print(f"\n{prompt}")
-
-        for key, description in options.items():
-            print(f"  {key}. {description}")
-
-        choice = input("Selecciona una opción: ").strip()
+        choice = ask_text("Selecciona una opción")
 
         if choice in options:
             return choice
 
-        print("  Opción no válida. Inténtalo de nuevo.")
+        print_warning("Opción no válida. Inténtalo de nuevo.")
 
 
 def ask_yes_no(prompt: str, default: bool = True) -> bool:
-    default_text = "S/n" if default else "s/N"
+    default_value = "s" if default else "n"
 
     while True:
-        answer = input(f"{prompt} ({default_text}): ").strip().lower()
-
-        if not answer:
-            return default
+        answer = ask_text(
+            f"{prompt} (s/n)",
+            default_value,
+        ).lower()
 
         if answer in {"s", "si", "sí", "y", "yes"}:
             return True
@@ -93,7 +123,7 @@ def ask_yes_no(prompt: str, default: bool = True) -> bool:
         if answer in {"n", "no"}:
             return False
 
-        print("  Responde sí o no.")
+        print_warning("Responde sí o no.")
 
 
 def ask_integer(
@@ -103,19 +133,21 @@ def ask_integer(
     maximum: int | None = None,
 ) -> int:
     while True:
-        raw = input(f"{prompt} [{default}]: ").strip()
-
-        if not raw:
-            return default
+        raw = ask_text(prompt, str(default))
 
         try:
             value = int(raw)
         except ValueError:
-            print("  Introduce un número entero.")
+            print_warning("Introduce un número entero.")
             continue
 
-        if value < minimum or (maximum is not None and value > maximum):
-            print(f"  El valor debe ser al menos {minimum}.")
+        if value < minimum or (
+            maximum is not None and value > maximum
+        ):
+            print_warning(
+                f"El valor debe estar entre {minimum} "
+                f"y {maximum if maximum is not None else 'sin límite'}."
+            )
             continue
 
         return value
@@ -127,19 +159,18 @@ def ask_float(
     minimum: float = 0.0,
 ) -> float:
     while True:
-        raw = input(f"{prompt} [{default}]: ").strip()
-
-        if not raw:
-            return default
+        raw = ask_text(prompt, str(default))
 
         try:
             value = float(raw.replace(",", "."))
         except ValueError:
-            print("  Introduce un número válido.")
+            print_warning("Introduce un número válido.")
             continue
 
         if not np.isfinite(value) or value < minimum:
-            print(f"  El valor debe ser finito y no inferior a {minimum}.")
+            print_warning(
+                f"El valor debe ser finito y no inferior a {minimum}."
+            )
             continue
 
         return value
@@ -147,30 +178,29 @@ def ask_float(
 
 def ask_date(prompt: str, default: str) -> str:
     while True:
-        value = input(f"{prompt} [{default}]: ").strip() or default
+        value = ask_text(prompt, default)
 
         try:
             parsed = datetime.strptime(value, "%Y-%m-%d")
             return parsed.strftime("%Y-%m-%d")
         except ValueError:
-            print("  Utiliza el formato YYYY-MM-DD.")
-
-
+            print_warning("Utiliza el formato YYYY-MM-DD.")
 # ---------------------------------------------------------------------
 # 1–2. Welcome and provider selection
 # ---------------------------------------------------------------------
 
 def choose_provider():
-    print_header("FINANCIAL TOOLKIT — ASISTENTE DE CARTERAS")
+    show_welcome()
 
-    print(
-        "\nBienvenido. Este asistente te ayudará a analizar activos, "
-        "construir una cartera, estudiar riesgos y comparar fuentes "
-        "de datos financieros."
+    print_info(
+        "Este asistente permite analizar activos, construir carteras, "
+        "estudiar riesgos y comparar fuentes de datos financieros."
     )
 
-    print("\nLos resultados son análisis cuantitativos históricos y "
-          "escenarios estadísticos, no recomendaciones de inversión.")
+    print_warning(
+        "Los resultados son análisis cuantitativos históricos y "
+        "escenarios estadísticos, no recomendaciones de inversión."
+    )
 
     while True:
         choice = ask_choice(
@@ -182,79 +212,89 @@ def choose_provider():
         )
 
         if choice == "1":
+            print_success("Proveedor seleccionado: Yahoo Finance")
             return YahooFinanceProvider(), "Yahoo Finance"
 
         if not os.getenv("TWELVE_DATA_API_KEY"):
-            print(
-                "\nNo se ha encontrado TWELVE_DATA_API_KEY.\n"
-                "Configura la variable de entorno o el secreto de "
-                "Codespaces y vuelve a intentarlo."
+            print_error(
+                "No se ha encontrado TWELVE_DATA_API_KEY. "
+                "Configura la variable de entorno o el secreto "
+                "de Codespaces y vuelve a intentarlo."
             )
             continue
 
+        print_success("Proveedor seleccionado: Twelve Data")
         return TwelveDataProvider(), "Twelve Data"
-
-
 # ---------------------------------------------------------------------
 # 3–5. Assets, weights and historical period
 # ---------------------------------------------------------------------
 
 def collect_tickers() -> list[str]:
-    print_header("SELECCIÓN DE ACTIVOS")
-
-    print("Introduce los tickers separados por comas.")
-    print("Ejemplo: AAPL, MSFT, NVDA")
+    show_module_banner(
+        "SELECCIÓN DE ACTIVOS",
+        "Define los instrumentos financieros que integrarán tu cartera.",
+    )
+    print_info("Introduce los tickers separados por comas.")
+    print_info("Ejemplo: AAPL, MSFT, NVDA")
 
     while True:
         raw = ask_text("Activos", "AAPL, MSFT, NVDA")
-
         tickers = [
             ticker.strip().upper()
             for ticker in raw.split(",")
             if ticker.strip()
         ]
-
         if not tickers:
-            print("Debes indicar al menos un activo.")
+            print_warning("Debes indicar al menos un activo.")
             continue
-
         if len(tickers) != len(set(tickers)):
-            print("Hay tickers duplicados. Corrige la selección.")
+            print_warning("Hay tickers duplicados. Corrige la selección.")
             continue
-
+        print_success(
+            f"Se han seleccionado {len(tickers)} activos: "
+            f"{', '.join(tickers)}"
+        )
         return tickers
 
 
 def collect_weights(tickers: list[str]) -> dict[str, float]:
-    print_header("PONDERACIÓN DE LA CARTERA")
-
+    show_module_banner(
+        "PONDERACIÓN DE LA CARTERA",
+        "Asigna el porcentaje del capital correspondiente a cada activo.",
+    )
     equal_weight = 100.0 / len(tickers)
-
-    print("Distribuye el capital entre los activos.")
-    print("Puedes pulsar Enter para utilizar pesos equitativos.")
+    print_info("Pulsa Enter para aceptar los pesos equitativos sugeridos.")
 
     while True:
         weights = {}
-
         for ticker in tickers:
             value = ask_float(
                 f"Peso de {ticker} (%)",
-                round(equal_weight, 4),
+                round(equal_weight, 8),
                 minimum=0.0001,
             )
             weights[ticker] = value / 100.0
 
         total = sum(weights.values())
-
         if np.isclose(total, 1.0, atol=1e-6):
+            print_success(f"Ponderaciones validadas: {total:.6%}")
+            print_table(
+                "Composición de la cartera",
+                ["Activo", "Peso"],
+                [(ticker, format_percentage(weight)) for ticker, weight in weights.items()],
+            )
             return weights
-
-        print(f"\nLa suma actual es {total:.2%}, no 100 %.")
-        print("Vuelve a introducir las ponderaciones.")
+        print_warning(
+            f"La suma actual es {total:.6%}, no 100 %. "
+            "Vuelve a introducir las ponderaciones."
+        )
 
 
 def collect_dates() -> tuple[str, str]:
-    print_header("PERIODO HISTÓRICO")
+    show_module_banner(
+        "PERIODO HISTÓRICO",
+        "Selecciona el intervalo de precios para el análisis.",
+    )
 
     today = date.today()
     default_end = today.isoformat()
@@ -286,10 +326,15 @@ def download_data(
 
     print(f"Proveedor: {provider_name}")
     print(f"Activos: {', '.join(tickers)}")
-    print(f"Periodo: {start} a {end}")
+    print(
+        f"Periodo: {format_date(start)} a {format_date(end)}"
+    )
 
     pipeline = DataPipeline(provider)
-    data = pipeline.run(tickers=tickers, start=start, end=end)
+    with show_progress() as progress:
+        task = progress.add_task("Descargando y procesando datos...", total=1)
+        data = pipeline.run(tickers=tickers, start=start, end=end)
+        progress.update(task, completed=1)
 
     if data.empty:
         raise ValueError("La descarga no ha producido datos.")
@@ -302,9 +347,9 @@ def download_data(
             "No se han recibido datos para: " + ", ".join(missing)
         )
 
-    print(f"\nRegistros válidos: {len(data):,}")
-    print(f"Activos recibidos: {len(available)}")
-    print("Preprocesamiento completado.")
+    print_success(f"Registros válidos: {len(data):,}")
+    print_success(f"Activos recibidos: {len(available)}")
+    print_success("Preprocesamiento completado.")
 
     return data
 
@@ -347,51 +392,59 @@ def build_portfolio(
 
 def show_asset_statistics(portfolio: Portfolio) -> dict[str, dict]:
     print_header("ANÁLISIS INDIVIDUAL DE ACTIVOS")
-
     statistics = {}
-
+    rows = []
     for ticker, asset in portfolio.assets.items():
         returns = asset.returns()
-
         cumulative_return = float((1 + returns).prod() - 1)
-
+        maximum_drawdown = asset.maximum_drawdown()
         statistics[ticker] = {
             "observations": len(asset.prices),
             "mean": asset.mean,
             "volatility": asset.std,
             "cumulative_return": cumulative_return,
-            "maximum_drawdown": asset.maximum_drawdown(),
+            "maximum_drawdown": maximum_drawdown,
         }
-
-        print(f"\n{ticker}")
-        print(f"  Observaciones:       {len(asset.prices):,}")
-        print(f"  Precio medio:        {asset.mean:.4f}")
-        print(f"  Desviación estándar: {asset.std:.4f}")
-        print(f"  Rentabilidad total:  {cumulative_return:.2%}")
-        print(f"  Máx. drawdown:       {asset.maximum_drawdown():.2%}")
-
+        rows.append((
+            ticker,
+            f"{len(asset.prices):,}",
+            format_number(asset.mean),
+            format_number(asset.std),
+            format_percentage(cumulative_return),
+            format_percentage(maximum_drawdown),
+        ))
+    print_table(
+        "Estadísticas históricas por activo",
+        ["Activo", "Observaciones", "Precio medio", "Desv. estándar",
+         "Rentabilidad total", "Máx. drawdown"],
+        rows,
+    )
     return statistics
 
 
 def show_portfolio_statistics(portfolio: Portfolio) -> dict:
     print_header("ANÁLISIS DE CARTERA")
-
     annual_return = portfolio.annualized_return()
     annual_volatility = portfolio.volatility()
     returns = portfolio.returns()
     cumulative_return = float((1 + returns).prod() - 1)
-
-    print(f"Rentabilidad acumulada:  {cumulative_return:.2%}")
-    print(f"Rentabilidad anualizada: {annual_return:.2%}")
-    print(f"Volatilidad anualizada:  {annual_volatility:.2%}")
-    print(f"Observaciones:           {len(returns):,}")
-
+    print_table(
+        "Indicadores de la cartera",
+        ["Indicador", "Resultado"],
+        [
+            ("Rentabilidad acumulada", format_percentage(cumulative_return)),
+            ("Rentabilidad anualizada", format_percentage(annual_return)),
+            ("Volatilidad anualizada", format_percentage(annual_volatility)),
+            ("Observaciones", f"{len(returns):,}"),
+        ],
+    )
     return {
         "annual_return": annual_return,
         "annual_volatility": annual_volatility,
         "cumulative_return": cumulative_return,
         "observations": len(returns),
     }
+
 
 
 # ---------------------------------------------------------------------
@@ -421,9 +474,9 @@ def save_historical_outputs(
         )
         plt.close(figure)
 
-    print("Informe Markdown guardado.")
-    print("Datos históricos exportados a CSV.")
-    print(f"Gráficas guardadas: {len(figures)}")
+    print_success("Informe Markdown guardado.")
+    print_success("Datos históricos exportados a CSV.")
+    print_success(f"Gráficas guardadas: {len(figures)}")
 
     return report
 
@@ -443,7 +496,7 @@ def run_monte_carlo(
         return None
 
     initial_value = ask_float(
-        "Capital inicial",
+        "Capital inicial (USD)",
         100_000.0,
         minimum=0.01,
     )
@@ -454,11 +507,7 @@ def run_monte_carlo(
         maximum=100_000,
     )
 
-    raw_seed = input("Semilla aleatoria [42]: ").strip()
-    seed = int(raw_seed) if raw_seed else 42
-
-    if seed < 0:
-        raise ValueError("La semilla debe ser no negativa.")
+    seed = ask_integer("Semilla aleatoria", default=42, minimum=0)
 
     simulator = portfolio.monte_carlo(
         initial_value=initial_value,
@@ -477,13 +526,19 @@ def run_monte_carlo(
         (final_values < initial_value).mean()
     )
 
-    print(f"\nValor inicial:             {initial_value:,.2f}")
-    print(f"Valor final mediano:       {final_values.median():,.2f}")
-    print(f"Percentil 5:               {final_values.quantile(0.05):,.2f}")
-    print(f"Percentil 95:              {final_values.quantile(0.95):,.2f}")
-    print(f"VaR 95 % (pérdida):         {var_95:,.2f}")
-    print(f"CVaR 95 % (pérdida media):  {cvar_95:,.2f}")
-    print(f"Probabilidad simulada de pérdida: {probability_loss:.2%}")
+    print_table(
+        "Resultados de la simulación Monte Carlo",
+        ["Indicador", "Resultado"],
+        [
+            ("Capital inicial", format_currency(initial_value)),
+            ("Valor final mediano", format_currency(final_values.median())),
+            ("Percentil 5", format_currency(final_values.quantile(0.05))),
+            ("Percentil 95", format_currency(final_values.quantile(0.95))),
+            ("VaR 95 % (pérdida)", format_currency(var_95)),
+            ("CVaR 95 % (pérdida media)", format_currency(cvar_95)),
+            ("Probabilidad simulada de pérdida", format_percentage(probability_loss)),
+        ],
+    )
 
     trajectories.to_csv(
         output_dir / "monte_carlo_trajectories.csv",
@@ -507,17 +562,17 @@ def run_monte_carlo(
     )
     axes[0].set_title("Trayectorias Monte Carlo")
     axes[0].set_xlabel("Día de simulación")
-    axes[0].set_ylabel("Valor de la cartera")
+    axes[0].set_ylabel("Valor de la cartera (USD)")
     axes[0].grid(alpha=0.25)
 
     axes[1].hist(final_values, bins=40)
     axes[1].axvline(
         initial_value,
         linestyle="--",
-        label="Capital inicial",
+        label="Capital inicial (USD)",
     )
     axes[1].set_title("Distribución de valores finales")
-    axes[1].set_xlabel("Valor final")
+    axes[1].set_xlabel("Valor final (USD)")
     axes[1].set_ylabel("Frecuencia")
     axes[1].legend()
     axes[1].grid(alpha=0.25)
@@ -632,7 +687,7 @@ def compare_sources(
             "No existen fechas coincidentes suficientes para comparar "
             "los proveedores."
         )
-        print(message)
+        print_warning(message)
         return message, None
 
     comparison = pd.concat(
@@ -656,18 +711,30 @@ def compare_sources(
         mean_difference = group["difference_pct"].abs().mean()
         max_difference = group["difference_pct"].abs().max()
 
+        mean_difference_formatted = format_change(
+            mean_difference / 100
+        )
+        max_difference_formatted = format_change(
+            max_difference / 100
+        )
+
         lines.extend([
             f"{ticker}:",
             f"- Observaciones coincidentes: {len(group)}",
-            f"- Diferencia porcentual absoluta media: {mean_difference:.4f} %",
-            f"- Diferencia porcentual absoluta máxima: {max_difference:.4f} %",
+            f"- Diferencia porcentual absoluta media: {mean_difference_formatted}",
+            f"- Diferencia porcentual absoluta máxima: {max_difference_formatted}",
             "",
         ])
 
-        print(f"\n{ticker}")
-        print(f"  Observaciones coincidentes: {len(group)}")
-        print(f"  Diferencia absoluta media:  {mean_difference:.4f} %")
-        print(f"  Diferencia absoluta máxima: {max_difference:.4f} %")
+        print_table(
+            f"Comparación de {ticker}",
+            ["Indicador", "Resultado"],
+            [
+                ("Observaciones coincidentes", f"{len(group):,}"),
+                ("Diferencia absoluta media", mean_difference_formatted),
+                ("Diferencia absoluta máxima", max_difference_formatted),
+            ],
+        )
 
     lines.extend([
         "Advertencia metodológica:",
@@ -678,7 +745,10 @@ def compare_sources(
     ])
 
     message = "\n".join(lines)
-    print("\nAdvertencia: los precios pueden utilizar criterios de ajuste distintos.")
+    print_warning(
+        "Los precios pueden utilizar criterios de ajuste distintos."
+    )
+    print_success("Comparación entre proveedores completada.")
 
     return message, comparison
 
@@ -690,20 +760,23 @@ def compare_sources(
 def run_quality_checks() -> dict:
     print_header("CALIDAD E INTEGRIDAD DEL SISTEMA")
 
-    print("Ejecutando la suite automatizada de pruebas...")
+    print_info("Ejecutando la suite automatizada de pruebas...")
 
     try:
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q"],
-            cwd=PROJECT_ROOT,
-            capture_output=True,
-            text=True,
-            timeout=300,
-            check=False,
-        )
+        with show_progress() as progress:
+            task = progress.add_task("Ejecutando pytest...", total=1)
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest", "-q"],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                text=True,
+                timeout=300,
+                check=False,
+            )
+            progress.update(task, completed=1)
     except subprocess.TimeoutExpired:
         return {
-            "status": "Advertencia",
+            "status": "No verificado",
             "message": "La ejecución superó el límite de 300 segundos.",
             "passed": 0,
             "issues": 0,
@@ -712,7 +785,7 @@ def run_quality_checks() -> dict:
         }
     except OSError as error:
         return {
-            "status": "Advertencia",
+            "status": "No verificado",
             "message": f"No se pudo ejecutar pytest: {error}",
             "passed": 0,
             "issues": 0,
@@ -745,7 +818,7 @@ def run_quality_checks() -> dict:
         status = "Correcto"
         message = "Todas las pruebas ejecutadas fueron superadas."
     else:
-        status = "Advertencia"
+        status = "No verificado"
         message = "No fue posible confirmar que la suite se superó correctamente."
 
     return {
@@ -761,22 +834,20 @@ def run_quality_checks() -> dict:
 
 
 def show_quality_summary(quality: dict) -> None:
-    print_header("RESULTADO DE LAS PRUEBAS")
+    print_quality_status(
+        status=quality["status"],
+        passed=quality["passed"],
+        issues=quality["issues"],
+        failed=quality["failed"],
+        skipped=quality.get("skipped", 0),
+        total=quality["total"],
+    )
+    if quality.get("message"):
+        if quality["status"] == "Correcto":
+            print_success(quality["message"])
+        else:
+            print_warning(quality["message"])
 
-    print(f"Estado general: {quality['status']}")
-    print(f"Pruebas aprobadas: {quality['passed']}")
-    print(f"Errores / advertencias: {quality['issues']}")
-    print(f"Pruebas fallidas: {quality['failed']}")
-    print(f"Pruebas omitidas: {quality.get('skipped', 0)}")
-    print(f"Casos reportados: {quality['total']}")
-
-    if quality["total"] > 0:
-        percentage = quality["passed"] / quality["total"] * 100
-        print(f"Porcentaje aprobado sobre casos reportados: {percentage:.2f} %")
-    else:
-        print("Porcentaje aprobado: no disponible")
-
-    print(quality["message"])
 
 
 # ---------------------------------------------------------------------
@@ -875,10 +946,10 @@ def generate_executive_summary(
             "",
             f"- Simulaciones: {monte_carlo['simulations']:,}.",
             f"- Horizonte: {monte_carlo['days']} días de negociación.",
-            f"- Valor final mediano: {monte_carlo['median']:,.2f}.",
-            f"- Percentil 5: {monte_carlo['percentile_5']:,.2f}.",
-            f"- VaR 95 %: {monte_carlo['var_95']:,.2f}.",
-            f"- CVaR 95 %: {monte_carlo['cvar_95']:,.2f}.",
+            f"- Valor final mediano (USD): {monte_carlo['median']:,.2f}.",
+            f"- Percentil 5 (USD): {monte_carlo['percentile_5']:,.2f}.",
+            f"- VaR 95 % (USD): {monte_carlo['var_95']:,.2f}.",
+            f"- CVaR 95 % (USD): {monte_carlo['cvar_95']:,.2f}.",
             f"- Probabilidad simulada de terminar por debajo del capital "
             f"inicial: {monte_carlo['probability_loss']:.2%}.",
         ])
@@ -999,7 +1070,14 @@ def main() -> None:
             quality_results,
         )
 
-        print(executive_summary)
+        console.print(
+            Panel(
+                executive_summary,
+                title="[bold cyan]RESUMEN EJECUTIVO[/bold cyan]",
+                border_style="blue",
+                padding=(1, 2),
+            )
+        )
 
         summary_path = output_dir / "executive_summary.md"
         summary_path.write_text(
@@ -1013,20 +1091,23 @@ def main() -> None:
         ).to_csv(output_dir / "portfolio_returns.csv")
 
         print_header("ANÁLISIS COMPLETADO")
-
-        print(f"Resultados guardados en:\n{output_dir}")
-        print("\nArchivos principales:")
-        for path in sorted(output_dir.iterdir()):
-            print(f"  - {path.name}")
+        print_success(f"Resultados guardados en: {output_dir}")
+        print_table(
+            "Archivos generados",
+            ["Archivo"],
+            [(path.name,) for path in sorted(output_dir.iterdir())],
+        )
+        show_goodbye()
 
     except KeyboardInterrupt:
-        print("\n\nOperación cancelada por el usuario.")
+        print_warning("Operación cancelada por el usuario.")
+        show_goodbye()
 
     except Exception as error:
         print_header("NO SE PUDO COMPLETAR EL ANÁLISIS")
-        print(f"{type(error).__name__}: {error}")
-        print(
-            "\nRevisa los parámetros, la conexión de datos y la "
+        print_error(f"{type(error).__name__}: {error}")
+        print_info(
+            "Revisa los parámetros, la conexión de datos y la "
             "configuración del proveedor. Puedes volver a ejecutar "
             "el asistente."
         )

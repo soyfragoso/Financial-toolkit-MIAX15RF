@@ -234,3 +234,6 @@ gitignore
 # Temporary files
 *.tmp
 *.bak
+
+# Generated analysis outputs
+outputs/
