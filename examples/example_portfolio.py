@@ -25,6 +25,11 @@ import numpy as np
 import pandas as pd
 
 from Financial_toolkit.data.pipeline import DataPipeline
+from Financial_toolkit.data.company_universe import (
+    CATEGORIES,
+    generate_proposals,
+    rank_companies,
+)
 from Financial_toolkit.data.providers import (
     TwelveDataProvider,
     YahooFinanceProvider,
@@ -181,10 +186,16 @@ def ask_date(prompt: str, default: str) -> str:
         value = ask_text(prompt, default)
 
         try:
+            if re.fullmatch(r"\d{4}", value):
+                value = f"{value}-01-01"
+
             parsed = datetime.strptime(value, "%Y-%m-%d")
             return parsed.strftime("%Y-%m-%d")
         except ValueError:
-            print_warning("Utiliza el formato YYYY-MM-DD.")
+            print_warning(
+                "Utiliza YYYY, que equivale al 1 de enero, "
+                "o el formato completo YYYY-MM-DD."
+            )
 # ---------------------------------------------------------------------
 # 1–2. Welcome and provider selection
 # ---------------------------------------------------------------------
@@ -232,62 +243,205 @@ def choose_provider():
 def collect_tickers() -> list[str]:
     show_module_banner(
         "SELECCIÓN DE ACTIVOS",
-        "Define los instrumentos financieros que integrarán tu cartera.",
+        "Construye tu cartera manualmente o utiliza el universo de compañías.",
     )
-    print_info("Introduce los tickers separados por comas.")
-    print_info("Ejemplo: AAPL, MSFT, NVDA")
+
+    mode = ask_choice(
+        "¿Cómo deseas seleccionar tus compañías?",
+        {
+            "1": "Introducir mis propias compañías",
+            "2": "Utilizar la base de datos de MIAX 15",
+        },
+    )
+
+    if mode == "1":
+        while True:
+            raw = ask_text(
+                "Introduce tus tickers separados por comas",
+                "AAPL, MSFT, NVDA",
+            )
+            tickers = [
+                ticker.strip().upper()
+                for ticker in raw.split(",")
+                if ticker.strip()
+            ]
+
+            if not tickers:
+                print_warning("Debes indicar al menos un activo.")
+                continue
+
+            if len(tickers) != len(set(tickers)):
+                print_warning("Hay tickers duplicados. Corrige la selección.")
+                continue
+
+            print_success(
+                f"Se han seleccionado {len(tickers)} activos: "
+                f"{', '.join(tickers)}"
+            )
+            return tickers
+
+    print_info(
+        "Calculando el rendimiento histórico de cinco años "
+        "de las compañías candidatas mediante Yahoo Finance."
+    )
+    print_warning(
+        "Esta consulta requiere conexión a Internet y puede tardar. "
+        "Los resultados históricos no garantizan rendimientos futuros."
+    )
+
+    try:
+        rankings = rank_companies(years=5, limit=25)
+    except Exception as error:
+        print_error(f"No se pudo construir el universo: {error}")
+        raise
+
+    for category, category_name in CATEGORIES.items():
+        ranked = rankings.get(category, [])
+        print_section(
+            f"UNIVERSO {category}: {category_name} "
+            f"({len(ranked)} compañías válidas)"
+        )
+        if ranked:
+            print_table(
+                f"25 mejores candidatas — {category_name}",
+                ["Ticker", "Rendimiento acumulado 5 años"],
+                [
+                    (ticker, format_percentage(performance))
+                    for ticker, performance in ranked
+                ],
+            )
+        else:
+            print_warning(
+                f"No se encontraron datos suficientes para {category_name}."
+            )
 
     while True:
-        raw = ask_text("Activos", "AAPL, MSFT, NVDA")
-        tickers = [
-            ticker.strip().upper()
-            for ticker in raw.split(",")
-            if ticker.strip()
-        ]
-        if not tickers:
-            print_warning("Debes indicar al menos un activo.")
-            continue
-        if len(tickers) != len(set(tickers)):
-            print_warning("Hay tickers duplicados. Corrige la selección.")
-            continue
-        print_success(
-            f"Se han seleccionado {len(tickers)} activos: "
-            f"{', '.join(tickers)}"
+        try:
+            proposals = generate_proposals(rankings)
+        except ValueError as error:
+            print_error(str(error))
+            print_warning(
+                "Comprueba la conexión con Yahoo Finance y vuelve a ejecutar."
+            )
+            raise
+
+        print_section("PROPUESTAS ALEATORIAS DE CARTERA")
+        print_info(
+            "A-E: cinco compañías de una misma categoría. "
+            "Z: una compañía de cada categoría."
         )
-        return tickers
+
+        rows = []
+        for option, tickers in proposals.items():
+            if option == "Z":
+                description = "Una compañía de cada categoría"
+            else:
+                description = CATEGORIES[option]
+
+            rows.append((option, description, ", ".join(tickers)))
+
+        print_table(
+            "Selecciona tu cartera",
+            ["Opción", "Categoría", "Tickers"],
+            rows,
+        )
+
+        print_info(
+            "Pulsa A, B, C, D o E para elegir una categoría; "
+            "Z para diversificar; R para sortear de nuevo."
+        )
+
+        choice = ask_text("Tu selección").strip().upper()
+
+        if choice == "R":
+            print_info("Generando nuevas combinaciones aleatorias...")
+            continue
+
+        if choice not in proposals:
+            print_warning("Opción no válida. Elige A, B, C, D, E, Z o R.")
+            continue
+
+        selected = proposals[choice]
+        print_success(
+            f"Cartera seleccionada ({choice}): {', '.join(selected)}"
+        )
+        return selected
 
 
 def collect_weights(tickers: list[str]) -> dict[str, float]:
     show_module_banner(
         "PONDERACIÓN DE LA CARTERA",
-        "Asigna el porcentaje del capital correspondiente a cada activo.",
+        "Distribuye el capital entre los activos seleccionados.",
     )
     equal_weight = 100.0 / len(tickers)
-    print_info("Pulsa Enter para aceptar los pesos equitativos sugeridos.")
+
+    print_info(
+        f"Distribución equitativa sugerida: {equal_weight:.4f} % por activo."
+    )
+    print_info(
+        "Pulsa Enter en cada línea para aceptar el peso sugerido, "
+        "o escribe I para distribuir todo equitativamente en un solo paso."
+    )
 
     while True:
         weights = {}
+        invalid = False
+
         for ticker in tickers:
-            value = ask_float(
-                f"Peso de {ticker} (%)",
-                round(equal_weight, 8),
-                minimum=0.0001,
-            )
+            raw = console.input(
+                f"[bold cyan]Peso de {ticker} (%)"
+                f" [{equal_weight:.4f}]: [/bold cyan]"
+            ).strip()
+
+            if raw.lower() == "i":
+                weights = {
+                    symbol: 1.0 / len(tickers)
+                    for symbol in tickers
+                }
+                print_success("Distribución equitativa aplicada a toda la cartera.")
+                break
+
+            if not raw:
+                value = equal_weight
+            else:
+                try:
+                    value = float(raw.replace(",", "."))
+                except ValueError:
+                    print_warning("Introduce un porcentaje válido o pulsa I.")
+                    invalid = True
+                    break
+
+            if not np.isfinite(value) or value <= 0:
+                print_warning("El peso debe ser un número positivo y finito.")
+                invalid = True
+                break
+
             weights[ticker] = value / 100.0
 
-        total = sum(weights.values())
-        if np.isclose(total, 1.0, atol=1e-6):
-            print_success(f"Ponderaciones validadas: {total:.6%}")
-            print_table(
-                "Composición de la cartera",
-                ["Activo", "Peso"],
-                [(ticker, format_percentage(weight)) for ticker, weight in weights.items()],
+        if not invalid and not weights:
+            pass
+        elif not invalid:
+            total = sum(weights.values())
+            if np.isclose(total, 1.0, atol=1e-6):
+                print_success(f"Ponderaciones validadas: {total:.6%}")
+                print_table(
+                    "Composición de la cartera",
+                    ["Activo", "Peso"],
+                    [
+                        (ticker, format_percentage(weight))
+                        for ticker, weight in weights.items()
+                    ],
+                )
+                return weights
+            print_warning(
+                f"La suma actual es {total:.6%}, no 100 %. "
+                "Vuelve a introducir las ponderaciones."
             )
+
+        if len(weights) == len(tickers) and np.isclose(
+            sum(weights.values()), 1.0, atol=1e-6
+        ):
             return weights
-        print_warning(
-            f"La suma actual es {total:.6%}, no 100 %. "
-            "Vuelve a introducir las ponderaciones."
-        )
 
 
 def collect_dates() -> tuple[str, str]:
@@ -496,18 +650,27 @@ def run_monte_carlo(
         return None
 
     initial_value = ask_float(
-        "Capital inicial (USD)",
+        "Capital inicial USD (¿Cuánto quieres invertir?)",
         100_000.0,
         minimum=0.01,
     )
-    days = ask_integer("Horizonte en días de negociación", 252)
+    days = ask_integer(
+        "Horizonte en días de negociación "
+        "(¿Durante cuántos días quieres proyectar?)",
+        252,
+    )
     simulations = ask_integer(
-        "Número de simulaciones",
+        "Número de simulaciones "
+        "(¿Cuántos escenarios quieres calcular?)",
         1000,
         maximum=100_000,
     )
 
-    seed = ask_integer("Semilla aleatoria", default=42, minimum=0)
+    seed = ask_integer(
+        "Semilla aleatoria (¿Qué número permite repetir el mismo experimento?)",
+        default=42,
+        minimum=0,
+    )
 
     simulator = portfolio.monte_carlo(
         initial_value=initial_value,
