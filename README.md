@@ -20,7 +20,8 @@ Su objetivo es facilitar un flujo de trabajo reproducible, desde la obtención d
 ## 2. Funcionalidades principales
 
 - **Obtención de datos financieros:** conexión con Yahoo Finance y Twelve Data mediante proveedores estandarizados.
-- **Datos macroeconómicos:** integración independiente con FRED para descargar y procesar indicadores macroeconómicos.
+- **Datos macroeconómicos:** integración independiente con FRED para consultar PIB real (GDPC1), IPC (CPIAUCSL), desempleo (UNRATE), tipos de interés (FEDFUNDS) y rendimiento del bono del Tesoro a 10 años (GS10).
+- **Rentabilidad real:** cálculo de la evolución de la cartera ajustada por inflación mediante el IPC.
 - **Descarga de múltiples activos:** consulta de varios tickers y normalización de los datos recibidos.
 - **Procesamiento y validación:** limpieza, preparación y validación de series temporales financieras.
 - **Análisis de activos:** construcción de objetos `PriceSeries` y cálculo de estadísticas financieras.
@@ -57,13 +58,15 @@ Financial-toolkit-MIAX15RF/
 │       │   ├── downloader.py
 │       │   ├── macro_pipeline.py
 │       │   ├── macro_providers.py
+│       │   ├── company_universe.py
 │       │   ├── pipeline.py
 │       │   ├── preprocessing.py
 │       │   └── providers.py
 │       ├── models/
 │       │   ├── macro_series.py
 │       │   ├── portfolio.py
-│       │   └── price_series.py
+│       │   ├── price_series.py
+│       │   └── real_performance.py
 │       ├── simulation/
 │       │   └── monte_carlo.py
 │       └── utils/
@@ -167,7 +170,39 @@ También es posible proporcionar la clave mediante el argumento `api_key` del pr
 
 No incluyas claves API en el código fuente, en el README ni en el repositorio.
 
-## 7. Ejecución
+## 7. Configuración de FRED
+
+La integración macroeconómica de FRED es opcional e independiente de los proveedores de precios de mercado. Para utilizarla, se necesita una clave API gratuita de FRED.
+
+Configura la variable de entorno antes de iniciar el programa.
+
+En Linux, macOS o Codespaces:
+
+```bash
+export FRED_API_KEY="TU_CLAVE_API"
+```
+
+En PowerShell:
+
+```powershell
+$env:FRED_API_KEY="TU_CLAVE_API"
+```
+
+El miniagente puede consultar las siguientes series:
+
+| Indicador | Código FRED |
+|---|---|
+| PIB real | `GDPC1` |
+| Índice de precios al consumidor (IPC) | `CPIAUCSL` |
+| Tasa de desempleo | `UNRATE` |
+| Tasa de fondos federales | `FEDFUNDS` |
+| Rendimiento del Tesoro a 10 años | `GS10` |
+
+Si la clave no está configurada o los datos macroeconómicos no están disponibles, el análisis financiero principal puede continuar sin la integración FRED.
+
+**Consideración metodológica sobre la inflación:** el cálculo de rentabilidad real utiliza las observaciones del IPC disponibles y no posteriores a la fecha de referencia de la cartera. Sin embargo, las fechas de observación no equivalen necesariamente a las fechas de publicación. La implementación no reconstruye los retrasos de publicación ni las revisiones históricas de FRED; por tanto, el resultado no debe interpretarse como una serie histórica completamente libre de sesgo de anticipación (*look-ahead bias*) para backtesting.
+
+## 8. Ejecución
 
 Desde la raíz del proyecto:
 
@@ -189,12 +224,13 @@ El flujo contempla:
 8. Simulación de Monte Carlo.
 9. Exportación de resultados.
 10. Comparación entre proveedores.
-11. Elaboración de un resumen ejecutivo.
-12. Presentación del estado de calidad e integridad de las pruebas.
+11. Consulta opcional de indicadores macroeconómicos de FRED.
+12. Cálculo de rentabilidad real ajustada por IPC, cuando hay datos disponibles.
+13. Elaboración del resumen ejecutivo y presentación del estado de calidad e integridad de las pruebas.
 
 Las opciones disponibles dependen de los datos obtenidos, del proveedor seleccionado y de la configuración de cada ejecución.
 
-## 8. Archivos generados
+## 9. Archivos generados
 
 Cada ejecución crea un directorio independiente dentro de `outputs/`, identificado mediante una marca temporal.
 
@@ -209,13 +245,16 @@ Entre los archivos que puede generar se encuentran:
 | `monte_carlo_final_values.csv` | Valores finales de las simulaciones |
 | `monte_carlo_analysis.png` | Visualización de Monte Carlo |
 | `provider_comparison.csv` | Comparación de proveedores, cuando se solicita |
+| `fred_indicators.csv` | Indicadores macroeconómicos de FRED, cuando están disponibles |
+| `real_performance.csv` | Evolución de la cartera ajustada por inflación |
+| `real_performance.png` | Visualización de la rentabilidad real |
 | `executive_summary.md` | Resumen ejecutivo |
 
 También se generan gráficos individuales a partir de `Portfolio.plots_report()`.
 
 Los archivos concretos dependen de las funcionalidades ejecutadas y de los resultados disponibles.
 
-## 9. Límites y consideraciones de Twelve Data
+## 10. Límites y consideraciones de Twelve Data
 
 La integración con Twelve Data utiliza el endpoint `/time_series` para obtener datos históricos.
 
@@ -256,7 +295,7 @@ Documentación oficial:
 - Endpoint Time Series: https://twelvedata.com/docs#time-series
 - Preguntas frecuentes sobre datos históricos: https://support.twelvedata.com/
 
-## 10. Pruebas
+## 11. Pruebas
 
 ### Estandarización de datos
 
@@ -302,10 +341,11 @@ Las pruebas automatizadas cubren los principales componentes:
 - Validación de parámetros, matrices de covarianza y reproducibilidad.
 - Generación de informes y gráficos.
 - Universo estático de compañías incorporado en la versión 1.1.
+- Cálculo y validación de rentabilidad real ajustada por inflación.
 
 ### Suite automatizada
 
-En la versión 1.1, la suite está distribuida en 17 archivos de pruebas y contempla 193 casos recopilados. Esta cifra puede cambiar conforme evolucione el proyecto.
+En la versión 1.2, la última ejecución validada de la suite automatizada completó **212 pruebas aprobadas**, sin fallos ni advertencias. El número de pruebas puede cambiar conforme evolucione el proyecto.
 
 
 
@@ -324,7 +364,7 @@ La interfaz de calidad presenta el resultado de las pruebas mediante las siguien
 
 El resumen contempla pruebas aprobadas, errores o advertencias, pruebas fallidas, omitidas, total de pruebas y porcentaje de aprobación.
 
-## 11. Dependencias opcionales
+## 12. Dependencias opcionales
 
 El proyecto define los siguientes grupos opcionales:
 
@@ -346,7 +386,7 @@ Para instalar ambos grupos:
 pip install -e ".[cli,dev]"
 ```
 
-## 12. Licencia
+## 13. Licencia
 
 Este proyecto declara la licencia MIT en su configuración de empaquetado (`pyproject.toml`). Consulta el archivo [LICENSE](LICENSE) para conocer sus términos completos.
 
@@ -366,7 +406,8 @@ Its purpose is to provide a reproducible workflow, from historical data retrieva
 ## 2. Main features
 
 - **Financial data retrieval:** standardized connections to Yahoo Finance and Twelve Data.
-- **Macroeconomic data:** independent integration with FRED to retrieve and process macroeconomic indicators.
+- **Macroeconomic data:** independent FRED integration for real GDP (GDPC1), CPI (CPIAUCSL), unemployment (UNRATE), federal funds rate (FEDFUNDS), and 10-year Treasury yield (GS10).
+- **Real performance:** calculation of portfolio performance adjusted for inflation using CPI.
 - **Multiple asset downloads:** retrieval of several tickers and normalization of provider data.
 - **Data processing and validation:** cleaning, preparation, and validation of financial time series.
 - **Asset analysis:** `PriceSeries` objects and automatic financial statistics.
@@ -467,7 +508,39 @@ The key can also be passed through the provider's `api_key` argument.
 
 Do not include API keys in source code, the README, or the repository.
 
-## 7. Running the example
+## 7. FRED configuration
+
+FRED macroeconomic integration is optional and independent of market price data providers. A free FRED API key is required to use it.
+
+Set the environment variable before launching the program.
+
+On Linux, macOS, or Codespaces:
+
+```bash
+export FRED_API_KEY="YOUR_API_KEY"
+```
+
+On PowerShell:
+
+```powershell
+$env:FRED_API_KEY="YOUR_API_KEY"
+```
+
+The miniagent can retrieve the following series:
+
+| Indicator | FRED series |
+|---|---|
+| Real GDP | `GDPC1` |
+| Consumer Price Index (CPI) | `CPIAUCSL` |
+| Unemployment rate | `UNRATE` |
+| Federal funds rate | `FEDFUNDS` |
+| 10-year Treasury yield | `GS10` |
+
+If the API key is not configured or macroeconomic data is unavailable, the main financial analysis can continue without FRED integration.
+
+**Inflation methodology note:** real performance calculations use available CPI observations no later than the portfolio reference date. However, observation dates do not necessarily match publication dates. The implementation does not reconstruct historical publication delays or FRED revisions; therefore, the result should not be interpreted as a fully point-in-time, look-ahead-bias-free historical series for backtesting.
+
+## 8. Running the example
 
 From the project root:
 
@@ -489,12 +562,13 @@ The workflow covers:
 8. Monte Carlo simulation.
 9. Results export.
 10. Provider comparison.
-11. Executive summary generation.
-12. Test quality and integrity status.
+11. Optional retrieval of FRED macroeconomic indicators.
+12. CPI-adjusted real performance calculation, when data is available.
+13. Executive summary generation and test quality and integrity status.
 
 Available options depend on retrieved data, the selected provider, and the configuration of each run.
 
-## 8. Generated files
+## 9. Generated files
 
 Each execution creates a separate timestamped directory under `outputs/`.
 
@@ -509,13 +583,16 @@ Potential outputs include:
 | `monte_carlo_final_values.csv` | Final simulation values |
 | `monte_carlo_analysis.png` | Monte Carlo visualization |
 | `provider_comparison.csv` | Provider comparison, when requested |
+| `fred_indicators.csv` | FRED macroeconomic indicators, when available |
+| `real_performance.csv` | Inflation-adjusted portfolio performance |
+| `real_performance.png` | Real performance visualization |
 | `executive_summary.md` | Executive summary |
 
 Individual charts can also be generated through `Portfolio.plots_report()`.
 
 Actual outputs depend on the features executed and the available results.
 
-## 9. Twelve Data API limits and considerations
+## 10. Twelve Data API limits and considerations
 
 The Twelve Data integration uses the `/time_series` endpoint to retrieve historical data.
 
@@ -556,7 +633,7 @@ Official documentation:
 - Time Series endpoint: https://twelvedata.com/docs#time-series
 - Historical data FAQ: https://support.twelvedata.com/
 
-## 10. Testing
+## 11. Testing
 
 ### Data standardization
 
@@ -602,10 +679,11 @@ The automated tests cover the main system components:
 - Parameter validation, covariance matrices and reproducibility.
 - Report and chart generation.
 - Static company universe introduced in version 1.1.
+- Calculation and validation of inflation-adjusted real performance.
 
 ### Automated test suite
 
-In version 1.1, the test suite is distributed across 17 test files and includes 193 collected test cases. This number may change as the project evolves.
+In version 1.2, the latest validated automated test run completed **212 passing tests**, with no failures or warnings. The test count may change as the project evolves.
 
 
 
@@ -624,7 +702,7 @@ The quality interface reports test results using the following categories:
 
 The summary includes passed tests, errors or warnings, failed tests, skipped tests, total tests, and pass percentage.
 
-## 11. Optional dependencies
+## 12. Optional dependencies
 
 Install Rich for the terminal interface:
 
@@ -644,7 +722,7 @@ Install both optional groups:
 pip install -e ".[cli,dev]"
 ```
 
-## 12. License
+## 13. License
 
 The project declares the MIT license in its packaging configuration (`pyproject.toml`). Refer to the [LICENSE](LICENSE) file for the complete terms.
 
