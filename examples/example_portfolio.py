@@ -27,8 +27,8 @@ import pandas as pd
 from Financial_toolkit.data.pipeline import DataPipeline
 from Financial_toolkit.data.company_universe import (
     CATEGORIES,
+    COMPANY_UNIVERSE,
     generate_proposals,
-    rank_companies,
 )
 from Financial_toolkit.data.providers import (
     TwelveDataProvider,
@@ -36,6 +36,126 @@ from Financial_toolkit.data.providers import (
 )
 from Financial_toolkit.models.portfolio import Portfolio
 from Financial_toolkit.models.price_series import PriceSeries
+from Financial_toolkit.data.macro_pipeline import MacroDataPipeline
+from Financial_toolkit.data.macro_providers import FredDataProvider
+from Financial_toolkit.models.real_performance import calculate_real_performance
+
+
+# Nombres descriptivos utilizados exclusivamente en la interfaz.
+COMPANY_DISPLAY_NAMES = {
+    'AAPL': 'Apple',
+    'MSFT': 'Microsoft',
+    'NVDA': 'NVIDIA',
+    'AVGO': 'Broadcom',
+    'ORCL': 'Oracle',
+    'AMD': 'Advanced Micro Devices',
+    'QCOM': 'Qualcomm',
+    'TXN': 'Texas Instruments',
+    'AMAT': 'Applied Materials',
+    'LRCX': 'Lam Research',
+    'KLAC': 'KLA Corporation',
+    'MU': 'Micron Technology',
+    'ADI': 'Analog Devices',
+    'INTU': 'Intuit',
+    'NOW': 'ServiceNow',
+    'CRM': 'Salesforce',
+    'ADBE': 'Adobe',
+    'PANW': 'Palo Alto Networks',
+    'CRWD': 'CrowdStrike',
+    'ANET': 'Arista Networks',
+    'PLTR': 'Palantir Technologies',
+    'IBM': 'IBM',
+    'CSCO': 'Cisco Systems',
+    'ACN': 'Accenture',
+    'SHOP': 'Shopify',
+    'GOOGL': 'Alphabet (Google)',
+    'META': 'Meta Platforms',
+    'AMZN': 'Amazon',
+    'TSM': 'Taiwan Semiconductor Manufacturing',
+    'ASML': 'ASML Holding',
+    'ARM': 'Arm Holdings',
+    'MRVL': 'Marvell Technology',
+    'SNPS': 'Synopsys',
+    'CDNS': 'Cadence Design Systems',
+    'SMCI': 'Super Micro Computer',
+    'DELL': 'Dell Technologies',
+    'INTC': 'Intel',
+    'XOM': 'Exxon Mobil',
+    'CVX': 'Chevron',
+    'COP': 'ConocoPhillips',
+    'EOG': 'EOG Resources',
+    'OXY': 'Occidental Petroleum',
+    'SLB': 'SLB',
+    'BKR': 'Baker Hughes',
+    'HAL': 'Halliburton',
+    'FANG': 'Diamondback Energy',
+    'DVN': 'Devon Energy',
+    'APA': 'APA Corporation',
+    'EPD': 'Enterprise Products Partners',
+    'ET': 'Energy Transfer',
+    'WMB': 'Williams Companies',
+    'KMI': 'Kinder Morgan',
+    'LNG': 'Cheniere Energy',
+    'EQT': 'EQT Corporation',
+    'CTRA': 'Coterra Energy',
+    'NEE': 'NextEra Energy',
+    'CEG': 'Constellation Energy',
+    'VST': 'Vistra',
+    'FSLR': 'First Solar',
+    'ENPH': 'Enphase Energy',
+    'CNQ': 'Canadian Natural Resources',
+    'SHEL': 'Shell',
+    'TSLA': 'Tesla',
+    'TM': 'Toyota Motor',
+    'HMC': 'Honda Motor',
+    'F': 'Ford Motor',
+    'GM': 'General Motors',
+    'STLA': 'Stellantis',
+    'RACE': 'Ferrari',
+    'MBG.DE': 'Mercedes-Benz Group',
+    'BMW.DE': 'BMW',
+    'VOW3.DE': 'Volkswagen',
+    '7201.T': 'Nissan Motor',
+    '7267.T': 'Honda Motor',
+    '7203.T': 'Toyota Motor',
+    '7269.T': 'Suzuki Motor',
+    '7270.T': 'Subaru',
+    '005380.KS': 'Hyundai Motor',
+    '000270.KS': 'Kia',
+    '1211.HK': 'BYD',
+    'LI': 'Li Auto',
+    'NIO': 'NIO',
+    'XPEV': 'XPeng',
+    'RIVN': 'Rivian',
+    'LCID': 'Lucid Group',
+    'MBLY': 'Mobileye',
+    'APTV': 'Aptiv',
+    'IBE.MC': 'Iberdrola',
+    'ITX.MC': 'Inditex',
+    'SAN.MC': 'Banco Santander',
+    'BBVA.MC': 'BBVA',
+    'CABK.MC': 'CaixaBank',
+    'FER.MC': 'Ferrovial',
+    'ACS.MC': 'ACS',
+    'AENA.MC': 'Aena',
+    'ELE.MC': 'Endesa',
+    'REP.MC': 'Repsol',
+    'TEF.MC': 'Telefónica',
+    'GRF.MC': 'Grifols',
+    'CLNX.MC': 'Cellnex Telecom',
+    'LOG.MC': 'Logista',
+    'SAB.MC': 'Banco Sabadell',
+    'MAP.MC': 'Mapfre',
+    'ANA.MC': 'Acciona',
+    'ENG.MC': 'Enagás',
+    'RED.MC': 'Redeia',
+    'COL.MC': 'Inmobiliaria Colonial',
+    'MEL.MC': 'Meliá Hotels',
+    'ACX.MC': 'Acerinox',
+    'VIS.MC': 'Viscofan',
+    'SCYR.MC': 'Sacyr',
+    'NTGY.MC': 'Naturgy',
+}
 
 from Financial_toolkit.cli.banners import (
     show_welcome,
@@ -243,7 +363,7 @@ def choose_provider():
 def collect_tickers() -> list[str]:
     show_module_banner(
         "SELECCIÓN DE ACTIVOS",
-        "Construye tu cartera manualmente o utiliza el universo de compañías.",
+        "Construye tu cartera manualmente o utiliza el universo estático de MIAX 15.",
     )
 
     mode = ask_choice(
@@ -281,49 +401,31 @@ def collect_tickers() -> list[str]:
             return tickers
 
     print_info(
-        "Calculando el rendimiento histórico de cinco años "
-        "de las compañías candidatas mediante Yahoo Finance."
+        "MIAX 15 utiliza un universo estático de 25 compañías por categoría."
     )
     print_warning(
-        "Esta consulta requiere conexión a Internet y puede tardar. "
-        "Los resultados históricos no garantizan rendimientos futuros."
+        "Las listas son una selección de referencia, no un ranking "
+        "de rentabilidad ni una recomendación de inversión."
     )
 
-    try:
-        rankings = rank_companies(years=5, limit=25)
-    except Exception as error:
-        print_error(f"No se pudo construir el universo: {error}")
-        raise
-
     for category, category_name in CATEGORIES.items():
-        ranked = rankings.get(category, [])
-        print_section(
-            f"UNIVERSO {category}: {category_name} "
-            f"({len(ranked)} compañías válidas)"
+        print_section(f"UNIVERSO {category}: {category_name}")
+        print_table(
+            f"Tickers disponibles — {category_name}",
+            ["Ticker"],
+            [(ticker,) for ticker in COMPANY_UNIVERSE[category]],
         )
-        if ranked:
-            print_table(
-                f"25 mejores candidatas — {category_name}",
-                ["Ticker", "Rendimiento acumulado 5 años"],
-                [
-                    (ticker, format_percentage(performance))
-                    for ticker, performance in ranked
-                ],
-            )
-        else:
-            print_warning(
-                f"No se encontraron datos suficientes para {category_name}."
-            )
+        print_table(
+            f"Nombres de las compañías — {category_name}",
+            ["Nombre de la compañía"],
+            [
+                (COMPANY_DISPLAY_NAMES.get(ticker, ticker),)
+                for ticker in COMPANY_UNIVERSE[category]
+            ],
+        )
 
     while True:
-        try:
-            proposals = generate_proposals(rankings)
-        except ValueError as error:
-            print_error(str(error))
-            print_warning(
-                "Comprueba la conexión con Yahoo Finance y vuelve a ejecutar."
-            )
-            raise
+        proposals = generate_proposals()
 
         print_section("PROPUESTAS ALEATORIAS DE CARTERA")
         print_info(
@@ -333,17 +435,36 @@ def collect_tickers() -> list[str]:
 
         rows = []
         for option, tickers in proposals.items():
-            if option == "Z":
-                description = "Una compañía de cada categoría"
-            else:
-                description = CATEGORIES[option]
-
+            description = (
+                "Una compañía de cada categoría"
+                if option == "Z"
+                else CATEGORIES[option]
+            )
             rows.append((option, description, ", ".join(tickers)))
 
         print_table(
-            "Selecciona tu cartera",
+            "Selecciona tu cartera — Tickers",
             ["Opción", "Categoría", "Tickers"],
             rows,
+        )
+
+        name_rows = []
+        for option, tickers in proposals.items():
+            description = (
+                "Una compañía de cada categoría"
+                if option == "Z"
+                else CATEGORIES[option]
+            )
+            company_names = ", ".join(
+                COMPANY_DISPLAY_NAMES.get(ticker, ticker)
+                for ticker in tickers
+            )
+            name_rows.append((option, description, company_names))
+
+        print_table(
+            "Nombres de las compañías propuestas",
+            ["Opción", "Categoría", "Compañías"],
+            name_rows,
         )
 
         print_info(
@@ -485,10 +606,16 @@ def download_data(
     )
 
     pipeline = DataPipeline(provider)
-    with show_progress() as progress:
-        task = progress.add_task("Descargando y procesando datos...", total=1)
+
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r".*inplace.*",
+            category=Warning,
+        )
         data = pipeline.run(tickers=tickers, start=start, end=end)
-        progress.update(task, completed=1)
 
     if data.empty:
         raise ValueError("La descarga no ha producido datos.")
@@ -500,10 +627,6 @@ def download_data(
         raise ValueError(
             "No se han recibido datos para: " + ", ".join(missing)
         )
-
-    print_success(f"Registros válidos: {len(data):,}")
-    print_success(f"Activos recibidos: {len(available)}")
-    print_success("Preprocesamiento completado.")
 
     return data
 
@@ -1017,6 +1140,206 @@ def show_quality_summary(quality: dict) -> None:
 # 11. Executive summary for decision support
 # ---------------------------------------------------------------------
 
+def run_macro_analysis(
+    portfolio: Portfolio,
+    start: str,
+    end: str,
+    output_dir: Path,
+    monte_carlo: dict | None = None,
+) -> dict | None:
+    """Ejecuta el análisis macroeconómico opcional mediante FRED."""
+
+    print_header("ANÁLISIS MACROECONÓMICO — FRED")
+
+    if not ask_yes_no(
+        "¿Deseas incorporar indicadores macroeconómicos de FRED?",
+        False,
+    ):
+        print("Análisis macroeconómico omitido.")
+        return None
+
+    if not os.getenv("FRED_API_KEY"):
+        print_warning(
+            "FRED_API_KEY no está configurada. "
+            "Se omite el análisis macroeconómico sin afectar "
+            "el análisis financiero."
+        )
+        print_info(
+            'Cuando tengas tu clave, configura FRED_API_KEY '
+            'como variable de entorno.'
+        )
+        return None
+
+    catalog = {
+        "GDPC1": {
+            "name": "PIB real de Estados Unidos",
+            "units": "Miles de millones de USD",
+            "frequency": "Trimestral",
+        },
+        "CPIAUCSL": {
+            "name": "Índice de precios al consumidor (IPC)",
+            "units": "Índice 1982-1984 = 100",
+            "frequency": "Mensual",
+        },
+        "UNRATE": {
+            "name": "Tasa de desempleo",
+            "units": "%",
+            "frequency": "Mensual",
+        },
+        "FEDFUNDS": {
+            "name": "Tipo efectivo de fondos federales",
+            "units": "%",
+            "frequency": "Mensual",
+        },
+        "GS10": {
+            "name": "Rendimiento del Treasury a 10 años",
+            "units": "%",
+            "frequency": "Mensual",
+        },
+    }
+
+    try:
+        # Se amplía el inicio para obtener el IPC anterior
+        # a la primera observación de rentabilidad.
+        macro_start = (
+            datetime.strptime(start, "%Y-%m-%d")
+            - timedelta(days=120)
+        ).strftime("%Y-%m-%d")
+
+        provider = FredDataProvider()
+        pipeline = MacroDataPipeline(provider)
+
+        print_info("Consultando indicadores macroeconómicos...")
+        series = pipeline.download(
+            list(catalog),
+            macro_start,
+            end,
+        )
+
+        indicators = pipeline.to_dataframe(series)
+        indicators.to_csv(
+            output_dir / "fred_indicators.csv",
+            index=False,
+        )
+
+        rows = []
+
+        for series_id, macro_series in series.items():
+            metadata = catalog[series_id]
+            latest_date = macro_series.values.index[-1]
+            latest_value = float(macro_series.values.iloc[-1])
+
+            rows.append((
+                series_id,
+                metadata["name"],
+                f"{latest_value:,.2f} {metadata['units']}",
+                latest_date.strftime("%Y-%m-%d"),
+                metadata["frequency"],
+            ))
+
+        print_table(
+            "Indicadores macroeconómicos de Estados Unidos",
+            ["Serie", "Indicador", "Último valor", "Fecha", "Frecuencia"],
+            rows,
+        )
+
+        # Reutiliza el capital de Monte Carlo cuando esté disponible.
+        if monte_carlo is not None:
+            initial_capital = float(monte_carlo["initial_value"])
+            print_info(
+                "Se reutiliza el capital inicial de Monte Carlo: "
+                f"{format_currency(initial_capital)}."
+            )
+        else:
+            initial_capital = ask_float(
+                "Capital inicial para calcular la rentabilidad real (USD)",
+                100_000.0,
+                minimum=0.01,
+            )
+
+        real_performance = calculate_real_performance(
+            portfolio_returns=portfolio.returns(),
+            cpi=series["CPIAUCSL"].values,
+            initial_capital=initial_capital,
+        )
+
+        real_path = real_performance["path"]
+        real_path.to_csv(
+            output_dir / "real_performance.csv",
+        )
+
+        # Comparación gráfica del valor nominal y el poder adquisitivo real.
+        figure, axis = plt.subplots(figsize=(11, 5))
+
+        real_path["nominal_value"].plot(
+            ax=axis,
+            label="Valor nominal",
+        )
+        real_path["real_value"].plot(
+            ax=axis,
+            label="Valor real ajustado por IPC de EE. UU.",
+        )
+
+        axis.set_title("Evolución nominal y real del capital")
+        axis.set_xlabel("Fecha")
+        axis.set_ylabel("Valor de la cartera (USD)")
+        axis.grid(alpha=0.25)
+        axis.legend()
+
+        figure.tight_layout()
+        figure.savefig(
+            output_dir / "real_performance.png",
+            dpi=160,
+            bbox_inches="tight",
+        )
+        plt.close(figure)
+
+        print_table(
+            "Rentabilidad nominal y real ajustada por inflación",
+            ["Indicador", "Resultado"],
+            [
+                ("Capital inicial", format_currency(
+                    real_performance["initial_capital"]
+                )),
+                ("Rentabilidad nominal acumulada", format_percentage(
+                    real_performance["nominal_return"]
+                )),
+                ("Rentabilidad real acumulada", format_percentage(
+                    real_performance["real_return"]
+                )),
+                ("Inflación acumulada (IPC EE. UU.)", format_percentage(
+                    real_performance["inflation_accumulated"]
+                )),
+                ("Valor final nominal", format_currency(
+                    real_performance["nominal_final_value"]
+                )),
+                ("Valor final real", format_currency(
+                    real_performance["real_final_value"]
+                )),
+                ("Impacto inflacionario", format_currency(
+                    real_performance["inflation_impact"]
+                )),
+            ],
+        )
+
+        print_success("Indicadores FRED y rentabilidad real exportados.")
+
+        return {
+            "indicators": series,
+            "real_performance": real_performance,
+        }
+
+    except Exception as error:
+        print_warning(
+            "No se pudo completar el análisis FRED: "
+            f"{type(error).__name__}: {error}"
+        )
+        print_info(
+            "El análisis financiero principal continuará normalmente."
+        )
+        return None
+
+
 def generate_executive_summary(
     portfolio: Portfolio,
     asset_statistics: dict,
@@ -1024,6 +1347,7 @@ def generate_executive_summary(
     monte_carlo: dict | None,
     comparison_message: str | None,
     quality: dict | None,
+    macro_results: dict | None = None,
 ) -> str:
     lines = [
         "# Resumen ejecutivo — Análisis de cartera",
@@ -1138,6 +1462,36 @@ def generate_executive_summary(
             f"- Diagnóstico: {quality['message']}",
         ])
 
+    if macro_results:
+        real = macro_results["real_performance"]
+        lines.extend([
+            "",
+            "## Rentabilidad real ajustada por inflación",
+            "",
+            "- Referencia inflacionaria: IPC de Estados Unidos (CPIAUCSL).",
+            "- Criterio temporal: última observación del IPC con fecha de referencia igual o anterior a cada fecha de cartera.",
+            "- Limitación metodológica: la fecha de observación no equivale necesariamente a la fecha de publicación de FRED; no se controlan retrasos de publicación ni revisiones históricas.",
+            "- Interpretación: estimación histórica ajustada por inflación; no constituye un backtest point-in-time libre de look-ahead bias.",
+            f"- Capital inicial: {real['initial_capital']:,.2f} USD.",
+            f"- Rentabilidad nominal acumulada: {real['nominal_return']:.2%}.",
+            f"- Rentabilidad real acumulada: {real['real_return']:.2%}.",
+            f"- Inflación acumulada: {real['inflation_accumulated']:.2%}.",
+            f"- Valor final nominal: {real['nominal_final_value']:,.2f} USD.",
+            f"- Valor final real: {real['real_final_value']:,.2f} USD.",
+            f"- Impacto inflacionario: {real['inflation_impact']:,.2f} USD.",
+            "",
+            "## Indicadores macroeconómicos de FRED",
+            "",
+        ])
+
+        for series_id, macro_series in macro_results["indicators"].items():
+            latest = float(macro_series.values.iloc[-1])
+            latest_date = macro_series.values.index[-1].strftime("%Y-%m-%d")
+            lines.append(
+                f"- {series_id}: {latest:,.2f} "
+                f"(última observación: {latest_date})."
+            )
+
     lines.extend([
         "",
         "## Consideraciones para la toma de decisiones",
@@ -1211,6 +1565,15 @@ def main() -> None:
                 output_dir,
             )
 
+        # 11. Optional macroeconomic analysis.
+        macro_results = run_macro_analysis(
+            portfolio,
+            start,
+            end,
+            output_dir,
+            monte_carlo_results,
+        )
+
         # 12. Quality and integrity checks
         quality_results = None
 
@@ -1221,8 +1584,7 @@ def main() -> None:
             quality_results = run_quality_checks()
             show_quality_summary(quality_results)
 
-        # 11. Executive summary
-        print_header("RESUMEN EJECUTIVO")
+        # 13. Executive summary
 
         executive_summary = generate_executive_summary(
             portfolio,
@@ -1231,6 +1593,7 @@ def main() -> None:
             monte_carlo_results,
             comparison_message,
             quality_results,
+            macro_results,
         )
 
         console.print(

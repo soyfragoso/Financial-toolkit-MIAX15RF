@@ -273,13 +273,43 @@ class TwelveDataProvider(DataProvider):
                 "apikey": self.api_key
             }
 
-            response = requests.get(
-                self.API_URL,
-                params=params,
-                timeout=self.timeout
-            )
+            # La clave viaja como parámetro de la petición.
+            # Nunca propagamos excepciones HTTP originales porque
+            # pueden incluir la URL completa y revelar la API key.
+            try:
+                response = requests.get(
+                    self.API_URL,
+                    params=params,
+                    timeout=self.timeout
+                )
+                response.raise_for_status()
 
-            response.raise_for_status()
+            except requests.RequestException as error:
+                status_code = getattr(
+                    getattr(error, "response", None),
+                    "status_code",
+                    None,
+                )
+
+                status_detail = (
+                    f"HTTP {status_code}"
+                    if status_code is not None
+                    else "error de conexión o solicitud"
+                )
+
+                safe_message = (
+                    f"No se pudo consultar Twelve Data para "
+                    f"{ticker}: {status_detail}. "
+                    "La URL y las credenciales se han omitido."
+                )
+
+                exception_type = (
+                    requests.HTTPError
+                    if isinstance(error, requests.HTTPError)
+                    else RuntimeError
+                )
+
+                raise exception_type(safe_message) from None
 
             payload = response.json()
 
@@ -289,9 +319,18 @@ class TwelveDataProvider(DataProvider):
                 )
 
             if payload.get("status") == "error":
+                # Evita que un mensaje del proveedor pueda devolver
+                # accidentalmente la clave en texto claro.
+                message = str(
+                    payload.get("message", "Error desconocido")
+                )
+                message = message.replace(
+                    self.api_key,
+                    "[CLAVE OCULTA]",
+                )
+
                 raise ValueError(
-                    f"Error de Twelve Data para {ticker}: "
-                    f"{payload.get('message', 'Error desconocido')}."
+                    f"Error de Twelve Data para {ticker}: {message}."
                 )
 
             values = payload.get("values")

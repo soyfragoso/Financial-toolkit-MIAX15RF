@@ -20,6 +20,7 @@ Su objetivo es facilitar un flujo de trabajo reproducible, desde la obtención d
 ## 2. Funcionalidades principales
 
 - **Obtención de datos financieros:** conexión con Yahoo Finance y Twelve Data mediante proveedores estandarizados.
+- **Datos macroeconómicos:** integración independiente con FRED para descargar y procesar indicadores macroeconómicos.
 - **Descarga de múltiples activos:** consulta de varios tickers y normalización de los datos recibidos.
 - **Procesamiento y validación:** limpieza, preparación y validación de series temporales financieras.
 - **Análisis de activos:** construcción de objetos `PriceSeries` y cálculo de estadísticas financieras.
@@ -29,6 +30,7 @@ Su objetivo es facilitar un flujo de trabajo reproducible, desde la obtención d
 - **Visualización:** gráficos de análisis y simulación.
 - **Informes:** generación de informes en Markdown y gráficos mediante `Portfolio.report()` y `Portfolio.plots_report()`.
 - **Comparación de proveedores:** contraste de datos obtenidos desde Yahoo Finance y Twelve Data.
+- **Series macroeconómicas:** representación de indicadores mediante objetos `MacroSeries` y estadísticas descriptivas.
 - **Exportación:** almacenamiento de datos, resultados y documentos para su análisis posterior.
 - **Interfaz interactiva:** ejecución guiada mediante Rich en la terminal.
 
@@ -53,10 +55,13 @@ Financial-toolkit-MIAX15RF/
 │       │   └── interface.py
 │       ├── data/
 │       │   ├── downloader.py
+│       │   ├── macro_pipeline.py
+│       │   ├── macro_providers.py
 │       │   ├── pipeline.py
 │       │   ├── preprocessing.py
 │       │   └── providers.py
 │       ├── models/
+│       │   ├── macro_series.py
 │       │   ├── portfolio.py
 │       │   └── price_series.py
 │       ├── simulation/
@@ -74,7 +79,7 @@ Financial-toolkit-MIAX15RF/
 | Módulo | Responsabilidad |
 |---|---|
 | `data` | Proveedores, descarga, pipeline y preprocesamiento |
-| `models` | Modelos `PriceSeries` y `Portfolio` |
+| `models` | Modelos `PriceSeries`, `MacroSeries` y `Portfolio` |
 | `analytics` | Informes y visualizaciones |
 | `simulation` | Simulación de Monte Carlo |
 | `utils` | Validaciones y utilidades |
@@ -88,6 +93,7 @@ La documentación de arquitectura y el diagrama correspondiente se encuentran en
 - Python 3.10 o superior.
 - Conexión a Internet para descargar datos financieros.
 - Una clave API de Twelve Data cuando se utilice ese proveedor.
+- Una clave API de FRED cuando se utilice el proveedor macroeconómico.
 - Dependencias instaladas mediante `pip`.
 
 Las dependencias principales incluyen:
@@ -252,6 +258,57 @@ Documentación oficial:
 
 ## 10. Pruebas
 
+### Estandarización de datos
+
+MIAX 15 Financial Powertool utiliza un esquema común para integrar datos de distintos proveedores, incluidos Yahoo Finance y Twelve Data.
+
+El esquema normalizado contempla los siguientes campos:
+
+- `ticker`: símbolo del activo.
+- `date`: fecha de negociación.
+- `open`, `high`, `low`, `close`: precios OHLC.
+- `adj_close`: precio de cierre ajustado.
+- `volume`: volumen negociado.
+
+Los proveedores de mercado entregan los datos al pipeline, que aplica el procesamiento y la normalización necesarios antes de utilizarlos en los modelos.
+
+Los datos macroeconómicos de FRED utilizan un flujo independiente. `FredDataProvider` obtiene las observaciones y `MacroDataPipeline` las organiza mediante objetos `MacroSeries`. Su esquema utiliza los campos `series_id`, `date` y `value`, por lo que no se mezcla con el esquema OHLCV de los precios de mercado. La clave API puede configurarse mediante la variable de entorno `FRED_API_KEY`.
+
+### Controles de calidad de datos
+
+El sistema incorpora controles automatizados para verificar, entre otros aspectos:
+
+- Presencia de las columnas obligatorias.
+- Normalización de símbolos y fechas.
+- Conversión y validación de valores numéricos.
+- Detección y eliminación de registros duplicados o incompletos.
+- Coherencia de los valores OHLC.
+- Rechazo de precios de cierre no positivos.
+- Detección de valores numéricos infinitos.
+- Conservación de los datos originales durante el preprocesamiento.
+
+Estos controles verifican la consistencia estructural y numérica de los datos recibidos. No constituyen una auditoría externa ni garantizan la exactitud de las fuentes originales.
+
+### Pruebas de integridad del sistema
+
+Las pruebas automatizadas cubren los principales componentes:
+
+- Proveedores de datos de mercado y macroeconómicos, descarga y pipelines.
+- Validación y procesamiento de series macroeconómicas.
+- Series de precios y validación de activos.
+- Construcción de carteras y validación de ponderaciones.
+- Rendimientos, volatilidad y métricas de riesgo.
+- Simulaciones Monte Carlo y de carteras.
+- Validación de parámetros, matrices de covarianza y reproducibilidad.
+- Generación de informes y gráficos.
+- Universo estático de compañías incorporado en la versión 1.1.
+
+### Suite automatizada
+
+En la versión 1.1, la suite está distribuida en 17 archivos de pruebas y contempla 193 casos recopilados. Esta cifra puede cambiar conforme evolucione el proyecto.
+
+
+
 Para ejecutar la suite de pruebas:
 
 ```bash
@@ -309,6 +366,7 @@ Its purpose is to provide a reproducible workflow, from historical data retrieva
 ## 2. Main features
 
 - **Financial data retrieval:** standardized connections to Yahoo Finance and Twelve Data.
+- **Macroeconomic data:** independent integration with FRED to retrieve and process macroeconomic indicators.
 - **Multiple asset downloads:** retrieval of several tickers and normalization of provider data.
 - **Data processing and validation:** cleaning, preparation, and validation of financial time series.
 - **Asset analysis:** `PriceSeries` objects and automatic financial statistics.
@@ -318,6 +376,7 @@ Its purpose is to provide a reproducible workflow, from historical data retrieva
 - **Visualization:** analytical and simulation charts.
 - **Reporting:** Markdown reports and charts through `Portfolio.report()` and `Portfolio.plots_report()`.
 - **Provider comparison:** comparison of Yahoo Finance and Twelve Data data.
+- **Macroeconomic series:** representation of indicators through `MacroSeries` objects and descriptive statistics.
 - **Export:** storage of data, results, and reports for further analysis.
 - **Interactive interface:** guided terminal execution using Rich.
 
@@ -328,7 +387,7 @@ The project follows a `src/` layout and separates responsibilities into modules:
 | Module | Responsibility |
 |---|---|
 | `data` | Data providers, downloads, pipeline, and preprocessing |
-| `models` | `PriceSeries` and `Portfolio` models |
+| `models` | `PriceSeries`, `MacroSeries`, and `Portfolio` models |
 | `analytics` | Reports and visualizations |
 | `simulation` | Monte Carlo simulation |
 | `utils` | Validation and utilities |
@@ -342,6 +401,7 @@ Architecture documentation and the corresponding diagram are available in [`docs
 - Python 3.10 or later.
 - Internet access for financial data retrieval.
 - A Twelve Data API key when using that provider.
+- A FRED API key when using the macroeconomic data provider.
 - Dependencies installed through `pip`.
 
 Main dependencies include pandas, NumPy, yfinance, Matplotlib, Seaborn, SciPy, and Requests.
@@ -497,6 +557,57 @@ Official documentation:
 - Historical data FAQ: https://support.twelvedata.com/
 
 ## 10. Testing
+
+### Data standardization
+
+MIAX 15 Financial Powertool uses a common schema to integrate data from different providers, including Yahoo Finance and Twelve Data.
+
+The normalized schema includes:
+
+- `ticker`: asset symbol.
+- `date`: trading date.
+- `open`, `high`, `low`, `close`: OHLC prices.
+- `adj_close`: adjusted closing price.
+- `volume`: trading volume.
+
+Market data providers supply data to the pipeline, which applies the required processing and normalization before the data is used by the models.
+
+FRED macroeconomic data follows an independent workflow. `FredDataProvider` retrieves observations and `MacroDataPipeline` organizes them through `MacroSeries` objects. Its schema uses the fields `series_id`, `date`, and `value`, keeping it separate from the OHLCV market price schema. The API key can be configured through the `FRED_API_KEY` environment variable.
+
+### Data quality controls
+
+Automated controls verify, among other aspects:
+
+- Required columns are present.
+- Tickers and dates are normalized.
+- Numeric values are converted and validated.
+- Duplicate and incomplete records are detected and removed.
+- OHLC values are consistent.
+- Non-positive closing prices are rejected.
+- Infinite numeric values are detected.
+- Original data is preserved during preprocessing.
+
+These controls verify the structural and numerical consistency of received data. They do not constitute an external audit or guarantee the accuracy of the original data sources.
+
+### System integrity tests
+
+The automated tests cover the main system components:
+
+- Market and macroeconomic data providers, downloading and pipelines.
+- Macroeconomic series validation and processing.
+- Price series and asset validation.
+- Portfolio construction and weight validation.
+- Returns, volatility and risk metrics.
+- Monte Carlo and portfolio simulations.
+- Parameter validation, covariance matrices and reproducibility.
+- Report and chart generation.
+- Static company universe introduced in version 1.1.
+
+### Automated test suite
+
+In version 1.1, the test suite is distributed across 17 test files and includes 193 collected test cases. This number may change as the project evolves.
+
+
 
 Run the test suite with:
 
