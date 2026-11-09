@@ -1356,6 +1356,13 @@ def run_risk_adjusted_analysis(
 
     print_header("RENTABILIDAD AJUSTADA AL RIESGO")
 
+    if not ask_yes_no(
+        "¿Deseas calcular los ratios de Sharpe y Sortino?",
+        False,
+    ):
+        print("Ratios de rentabilidad ajustada al riesgo omitidos.")
+        return None
+    
     risk_free_rate = None
     rate_source = None
 
@@ -1379,15 +1386,17 @@ def run_risk_adjusted_analysis(
     # Sin datos de FRED, el usuario indica el tipo libre de riesgo.
     if risk_free_rate is None:
         while True:
-            percent = ask_float(
-                "Tipo libre de riesgo anual en % (por ejemplo, 4 para un 4 %)",
-                0.0,
+            raw = ask_text(
+                "Tipo libre de riesgo anual en % (rentabilidad media de "
+                "las Letras del Tesoro en el periodo analizado, en la "
+                "moneda del inversor)"
             )
 
-            if percent < 100:
+            try:
+                percent = float(raw.replace(",", "."))
                 break
-
-            print_warning("Introduce un porcentaje inferior a 100.")
+            except ValueError:
+                print_warning("Introduce un número, por ejemplo 3.5.")
 
         risk_free_rate = percent / 100
         rate_source = "Introducido por el usuario"
