@@ -39,6 +39,12 @@ from Financial_toolkit.models.price_series import PriceSeries
 from Financial_toolkit.data.macro_pipeline import MacroDataPipeline
 from Financial_toolkit.data.macro_providers import FredDataProvider
 from Financial_toolkit.models.real_performance import calculate_real_performance
+from Financial_toolkit.analytics.risk_adjusted import (
+    risk_free_rate_from_macro,
+    sharpe_ratio,
+    sortino_ratio,
+    interpret_ratio,
+)
 
 
 # Nombres descriptivos utilizados exclusivamente en la interfaz.
@@ -1340,6 +1346,94 @@ def run_macro_analysis(
         return None
 
 
+def run_risk_adjusted_analysis(
+    portfolio: Portfolio,
+    start: str,
+    end: str,
+    macro_results: dict | None = None,
+) -> dict | None:
+    """Calcula los ratios de Sharpe y Sortino de la cartera."""
+
+    print_header("RENTABILIDAD AJUSTADA AL RIESGO")
+
+    if not ask_yes_no(
+        "¿Deseas calcular los ratios de Sharpe y Sortino?",
+        False,
+    ):
+        print("Ratios de rentabilidad ajustada al riesgo omitidos.")
+        return None
+    
+    risk_free_rate = None
+    rate_source = None
+
+    # Si se han descargado datos de FRED, se usa el tipo de los fondos
+    # federales medio del periodo como tipo libre de riesgo.
+    if macro_results and "FEDFUNDS" in macro_results.get("indicators", {}):
+        try:
+            risk_free_rate = risk_free_rate_from_macro(
+                macro_results["indicators"]["FEDFUNDS"],
+                start,
+                end,
+            )
+            rate_source = "FEDFUNDS (FRED), media del periodo"
+            print_info(
+                "Tipo libre de riesgo tomado de FRED: "
+                f"{format_percentage(risk_free_rate)}."
+            )
+        except ValueError:
+            risk_free_rate = None
+
+    # Sin datos de FRED, el usuario indica el tipo libre de riesgo.
+    if risk_free_rate is None:
+        while True:
+            raw = ask_text(
+                "Tipo libre de riesgo anual en % (rentabilidad media de "
+                "las Letras del Tesoro en el periodo analizado, en la "
+                "moneda del inversor)"
+            )
+
+            try:
+                percent = float(raw.replace(",", "."))
+                break
+            except ValueError:
+                print_warning("Introduce un número, por ejemplo 3.5.")
+
+        risk_free_rate = percent / 100
+        rate_source = "Introducido por el usuario"
+
+    try:
+        sharpe = sharpe_ratio(portfolio, risk_free_rate)
+        sortino = sortino_ratio(portfolio, risk_free_rate)
+    except ValueError as error:
+        print_warning(f"No se pudieron calcular los ratios: {error}")
+        return None
+
+    sortino_text = "∞" if np.isinf(sortino) else f"{sortino:.2f}"
+
+    print_table(
+        "Ratios de rentabilidad ajustada al riesgo",
+        ["Indicador", "Resultado", "Lectura"],
+        [
+            ("Tipo libre de riesgo", format_percentage(risk_free_rate), ""),
+            ("Fuente del tipo", rate_source, ""),
+            ("Ratio de Sharpe", f"{sharpe:.2f}", interpret_ratio(sharpe)),
+            ("Ratio de Sortino", sortino_text, interpret_ratio(sortino)),
+        ],
+    )
+    print_info(
+        "En ambos ratios, cuanto mayor es el valor, más rentabilidad se "
+        "obtiene por cada unidad de riesgo. El Sharpe tiene en cuenta toda "
+        "la volatilidad; el Sortino, solo las caídas.  Referencia: menor que 0, negativo; de 0 a 1, aceptable; de 1 a 2, bueno; 2 o más, excelente."
+    )
+
+    return {
+        "risk_free_rate": risk_free_rate,
+        "rate_source": rate_source,
+        "sharpe": sharpe,
+        "sortino": sortino,
+    }
+
+
 def generate_executive_summary(
     portfolio: Portfolio,
     asset_statistics: dict,
@@ -1348,6 +1442,7 @@ def generate_executive_summary(
     comparison_message: str | None,
     quality: dict | None,
     macro_results: dict | None = None,
+    risk_adjusted: dict | None = None,
 ) -> str:
     lines = [
         "# Resumen ejecutivo — Análisis de cartera",
@@ -1492,6 +1587,24 @@ def generate_executive_summary(
                 f"(última observación: {latest_date})."
             )
 
+    if risk_adjusted:
+        sortino = risk_adjusted["sortino"]
+        sortino_text = "∞" if np.isinf(sortino) else f"{sortino:.2f}"
+        lines.extend([
+            "",
+            "## Rentabilidad ajustada al riesgo",
+            "",
+            f"- Tipo libre de riesgo: {risk_adjusted['risk_free_rate']:.2%} "
+            f"({risk_adjusted['rate_source']}).",
+            f"- Ratio de Sharpe: {risk_adjusted['sharpe']:.2f} "
+            f"({interpret_ratio(risk_adjusted['sharpe'])}).",
+            f"- Ratio de Sortino: {sortino_text} "
+            f"({interpret_ratio(sortino)}).",
+            "- Referencia: menor que 0, negativo; de 0 a 1, aceptable; "
+            "de 1 a 2, bueno; 2 o más, excelente. Compara siempre Sharpe "
+            "con Sharpe y Sortino con Sortino.",
+        ])    
+        
     lines.extend([
         "",
         "## Consideraciones para la toma de decisiones",
@@ -1574,6 +1687,14 @@ def main() -> None:
             monte_carlo_results,
         )
 
+        # 11b. Risk-adjusted return: Sharpe and Sortino ratios.
+        risk_adjusted_results = run_risk_adjusted_analysis(
+            portfolio,
+            start,
+            end,
+            macro_results,
+        )
+    
         # 12. Quality and integrity checks
         quality_results = None
 
@@ -1594,6 +1715,7 @@ def main() -> None:
             comparison_message,
             quality_results,
             macro_results,
+            risk_adjusted_results,
         )
 
         console.print(
