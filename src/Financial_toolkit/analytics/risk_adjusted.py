@@ -212,3 +212,23 @@ def risk_adjusted_summary(
         "Ratio de Sharpe": sharpe_ratio(source, risk_free_rate, periods),
         "Ratio de Sortino": sortino_ratio(source, risk_free_rate, periods),
     })
+
+
+def interpret_ratio(value: float) -> str:
+    """
+    Traduce un ratio de Sharpe o de Sortino a una lectura cualitativa.
+
+    Los umbrales son una referencia habitual, no una regla universal.
+    Compara siempre Sharpe con Sharpe y Sortino con Sortino.
+    """
+
+    if isinstance(value, bool) or not isinstance(value, Real) or np.isnan(value):
+        raise ValueError("El ratio debe ser numérico.")
+
+    if value < 0:
+        return "Negativo: un activo sin riesgo habría rendido más"
+    if value < 1:
+        return "Aceptable: compensa el riesgo, pero de forma moderada"
+    if value < 2:
+        return "Bueno: compensa bien el riesgo asumido"
+    return "Excelente: muy buena rentabilidad por unidad de riesgo"

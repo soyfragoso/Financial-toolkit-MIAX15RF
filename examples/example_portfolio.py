@@ -43,6 +43,7 @@ from Financial_toolkit.analytics.risk_adjusted import (
     risk_free_rate_from_macro,
     sharpe_ratio,
     sortino_ratio,
+    interpret_ratio,
 )
 
 
@@ -1402,18 +1403,18 @@ def run_risk_adjusted_analysis(
 
     print_table(
         "Ratios de rentabilidad ajustada al riesgo",
-        ["Indicador", "Resultado"],
+        ["Indicador", "Resultado", "Lectura"],
         [
-            ("Tipo libre de riesgo", format_percentage(risk_free_rate)),
-            ("Fuente del tipo", rate_source),
-            ("Ratio de Sharpe", f"{sharpe:.2f}"),
-            ("Ratio de Sortino", sortino_text),
+            ("Tipo libre de riesgo", format_percentage(risk_free_rate), ""),
+            ("Fuente del tipo", rate_source, ""),
+            ("Ratio de Sharpe", f"{sharpe:.2f}", interpret_ratio(sharpe)),
+            ("Ratio de Sortino", sortino_text, interpret_ratio(sortino)),
         ],
     )
     print_info(
         "En ambos ratios, cuanto mayor es el valor, más rentabilidad se "
         "obtiene por cada unidad de riesgo. El Sharpe tiene en cuenta toda "
-        "la volatilidad; el Sortino, solo las caídas."
+        "la volatilidad; el Sortino, solo las caídas.  Referencia: menor que 0, negativo; de 0 a 1, aceptable; de 1 a 2, bueno; 2 o más, excelente."
     )
 
     return {
@@ -1586,8 +1587,13 @@ def generate_executive_summary(
             "",
             f"- Tipo libre de riesgo: {risk_adjusted['risk_free_rate']:.2%} "
             f"({risk_adjusted['rate_source']}).",
-            f"- Ratio de Sharpe: {risk_adjusted['sharpe']:.2f}.",
-            f"- Ratio de Sortino: {sortino_text}.",
+            f"- Ratio de Sharpe: {risk_adjusted['sharpe']:.2f} "
+            f"({interpret_ratio(risk_adjusted['sharpe'])}).",
+            f"- Ratio de Sortino: {sortino_text} "
+            f"({interpret_ratio(sortino)}).",
+            "- Referencia: menor que 0, negativo; de 0 a 1, aceptable; "
+            "de 1 a 2, bueno; 2 o más, excelente. Compara siempre Sharpe "
+            "con Sharpe y Sortino con Sortino.",
         ])    
         
     lines.extend([

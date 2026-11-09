@@ -3,6 +3,7 @@ import pandas as pd
 import pytest
 
 from Financial_toolkit.analytics.risk_adjusted import (
+    interpret_ratio, 
     risk_adjusted_summary,
     risk_free_rate_from_macro,
     sharpe_ratio,
@@ -129,4 +130,25 @@ def test_summary_contains_both_ratios(returns):
         "Ratio de Sortino",
     ]
     assert summary["Tipo libre de riesgo"] == 0.03
-    
+
+
+@pytest.mark.parametrize(
+    "value, start",
+    [
+        (-0.3, "Negativo"),
+        (0.0, "Aceptable"),
+        (0.85, "Aceptable"),
+        (1.0, "Bueno"),
+        (1.22, "Bueno"),
+        (2.0, "Excelente"),
+        (float("inf"), "Excelente"),
+    ],
+)
+def test_interpret_ratio(value, start):
+    assert interpret_ratio(value).startswith(start)
+
+
+@pytest.mark.parametrize("value", [float("nan"), "1", True])
+def test_interpret_ratio_invalid(value):
+    with pytest.raises(ValueError):
+        interpret_ratio(value)
