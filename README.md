@@ -22,6 +22,7 @@ Su objetivo es facilitar un flujo de trabajo reproducible, desde la obtención d
 - **Obtención de datos financieros:** conexión con Yahoo Finance y Twelve Data mediante proveedores estandarizados.
 - **Datos macroeconómicos:** integración independiente con FRED para consultar PIB real (GDPC1), IPC (CPIAUCSL), desempleo (UNRATE), tipos de interés (FEDFUNDS) y rendimiento del bono del Tesoro a 10 años (GS10).
 - **Rentabilidad real:** cálculo de la evolución de la cartera ajustada por inflación mediante el IPC.
+- **Rentabilidad ajustada al riesgo:** cálculo de los ratios de Sharpe y Sortino de la cartera, con el tipo libre de riesgo de FRED (FEDFUNDS) o introducido por el usuario, y lectura automática de cada ratio.
 - **Descarga de múltiples activos:** consulta de varios tickers y normalización de los datos recibidos.
 - **Procesamiento y validación:** limpieza, preparación y validación de series temporales financieras.
 - **Análisis de activos:** construcción de objetos `PriceSeries` y cálculo de estadísticas financieras.
@@ -83,7 +84,7 @@ Financial-toolkit-MIAX15RF/
 |---|---|
 | `data` | Proveedores, descarga, pipeline y preprocesamiento |
 | `models` | Modelos `PriceSeries`, `MacroSeries` y `Portfolio` |
-| `analytics` | Informes y visualizaciones |
+| `analytics` | Informes y visualizaciones y ratio de Sharpe y Sortino |
 | `simulation` | Simulación de Monte Carlo |
 | `utils` | Validaciones y utilidades |
 | `cli` | Interfaz de terminal, presentación y formato de resultados |
@@ -226,7 +227,8 @@ El flujo contempla:
 10. Comparación entre proveedores.
 11. Consulta opcional de indicadores macroeconómicos de FRED.
 12. Cálculo de rentabilidad real ajustada por IPC, cuando hay datos disponibles.
-13. Elaboración del resumen ejecutivo y presentación del estado de calidad e integridad de las pruebas.
+13. Cálculo opcional de los ratios de Sharpe y Sortino, con lectura automática de cada ratio.
+14. Elaboración del resumen ejecutivo y presentación del estado de calidad e integridad de las pruebas.
 
 Las opciones disponibles dependen de los datos obtenidos, del proveedor seleccionado y de la configuración de cada ejecución.
 
@@ -408,6 +410,7 @@ Its purpose is to provide a reproducible workflow, from historical data retrieva
 - **Financial data retrieval:** standardized connections to Yahoo Finance and Twelve Data.
 - **Macroeconomic data:** independent FRED integration for real GDP (GDPC1), CPI (CPIAUCSL), unemployment (UNRATE), federal funds rate (FEDFUNDS), and 10-year Treasury yield (GS10).
 - **Real performance:** calculation of portfolio performance adjusted for inflation using CPI.
+- **Risk-adjusted return:** Sharpe and Sortino ratios for the portfolio, using the FRED risk-free rate (FEDFUNDS) or one entered by the user, with an automatic reading of each ratio.
 - **Multiple asset downloads:** retrieval of several tickers and normalization of provider data.
 - **Data processing and validation:** cleaning, preparation, and validation of financial time series.
 - **Asset analysis:** `PriceSeries` objects and automatic financial statistics.
@@ -429,7 +432,7 @@ The project follows a `src/` layout and separates responsibilities into modules:
 |---|---|
 | `data` | Data providers, downloads, pipeline, and preprocessing |
 | `models` | `PriceSeries`, `MacroSeries`, and `Portfolio` models |
-| `analytics` | Reports and visualizations |
+| `analytics` | Reports, visualizations and Sharpe and Sortino ratios |
 | `simulation` | Monte Carlo simulation |
 | `utils` | Validation and utilities |
 | `cli` | Terminal interface, presentation, and result formatting |
@@ -564,7 +567,8 @@ The workflow covers:
 10. Provider comparison.
 11. Optional retrieval of FRED macroeconomic indicators.
 12. CPI-adjusted real performance calculation, when data is available.
-13. Executive summary generation and test quality and integrity status.
+13. Optional Sharpe and Sortino ratio calculation, with an automatic reading of each ratio.
+14. Executive summary generation and test quality and integrity status.
 
 Available options depend on retrieved data, the selected provider, and the configuration of each run.
 
