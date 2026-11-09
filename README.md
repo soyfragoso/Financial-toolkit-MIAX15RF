@@ -287,6 +287,7 @@ Estos límites pueden cambiar. Deben verificarse en la documentación y en el pl
 - En particular, `adj_close` puede no estar disponible en los datos de Twelve Data y permanecer como `NaN`.
 - La implementación adapta la fecha final de consulta para mantener una convención de intervalo compatible con la utilizada por Yahoo Finance.
 - Los periodos extensos pueden superar el máximo de puntos permitido por petición y requerir una estrategia de consulta distinta.
+- Los tickers se envían a Twelve Data con el mismo formato que en Yahoo Finance, sin convertirlos. Los símbolos con sufijo de mercado (por ejemplo `SAN.MC` o `BMW.DE`) no son reconocidos por Twelve Data, que usa otra notación y cuya cobertura de mercados no estadounidenses depende del plan contratado. Por ello, la comparación entre proveedores está pensada para tickers de Estados Unidos (por ejemplo AAPL o MSFT), que se escriben igual en ambos proveedores.
 
 **Recomendación:** para análisis con numerosos activos o periodos extensos, comprueba previamente la cuota disponible, la cobertura histórica y las condiciones de tu plan de Twelve Data.
 
@@ -627,6 +628,7 @@ These limits may change. Check the current documentation and subscription plan b
 - In particular, `adj_close` may not be available from Twelve Data and may remain `NaN`.
 - The implementation adjusts the requested end date to maintain an interval convention compatible with Yahoo Finance.
 - Long date ranges may exceed the maximum number of data points per request and require a different retrieval strategy.
+- Tickers are sent to Twelve Data in the same format used by Yahoo Finance, without conversion. Symbols with a market suffix (for example `SAN.MC` or `BMW.DE`) are not recognized by Twelve Data, which uses a different notation and whose coverage of non-US markets depends on the subscription plan. As a result, the provider comparison works with US tickers (for example `AAPL` or `MSFT`).
 
 **Recommendation:** before running analyses with many assets or long historical periods, check your available quota, historical coverage, and Twelve Data subscription conditions.
 
