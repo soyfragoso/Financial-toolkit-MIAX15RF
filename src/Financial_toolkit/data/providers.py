@@ -66,17 +66,129 @@ class YahooFinanceProvider(DataProvider):
                 "La fecha inicial debe ser anterior a la final."
             )
 
-        raw_data = yf.download(
-            tickers=tickers,
-            start=start,
-            end=end,
-            group_by="ticker",
-            auto_adjust=False,
-            progress=False,
-            threads=True
-        )
+        import logging
+
+        self.last_download_diagnostic = None
+
+        class YahooLogCapture(logging.Handler):
+            def __init__(self):
+                super().__init__()
+                self.messages = []
+
+            def emit(self, record):
+                self.messages.append(self.format(record))
+
+        capture = YahooLogCapture()
+        yahoo_logger = logging.getLogger("yfinance")
+        previous_propagate = yahoo_logger.propagate
+        yahoo_logger.addHandler(capture)
+        yahoo_logger.propagate = False
+
+        try:
+            try:
+                raw_data = yf.download(
+                    tickers=tickers,
+                    start=start,
+                    end=end,
+                    group_by="ticker",
+                    auto_adjust=False,
+                    progress=False,
+                    threads=True
+                )
+            except Exception as error:
+                diagnostic_text = " ".join(
+                    capture.messages + [str(error)]
+                ).lower()
+
+                if (
+                    "quote not found" in diagnostic_text
+                    or "symbol not found" in diagnostic_text
+                    or "http error 404" in diagnostic_text
+                ):
+                    category = "SYMBOL_NOT_FOUND"
+                    detail = (
+                        "Yahoo Finance no ha encontrado el símbolo "
+                        "solicitado."
+                    )
+                elif (
+                    "possibly delisted" in diagnostic_text
+                    or "may be delisted" in diagnostic_text
+                ):
+                    category = "POSSIBLE_DELISTING"
+                    detail = (
+                        "Yahoo Finance indica una posible exclusión "
+                        "de cotización. No es una confirmación."
+                    )
+                elif any(term in diagnostic_text for term in (
+                    "timeout", "timed out", "connection",
+                    "network", "name resolution", "dns",
+                    "max retries",
+                )):
+                    category = "CONNECTION_ERROR"
+                    detail = (
+                        "No se pudo completar la conexión con "
+                        "Yahoo Finance."
+                    )
+                else:
+                    category = "PROVIDER_ERROR"
+                    detail = (
+                        "Yahoo Finance ha producido un error "
+                        "durante la descarga."
+                    )
+
+                self.last_download_diagnostic = {
+                    "category": category,
+                    "detail": detail,
+                    "provider_message": " | ".join(capture.messages),
+                }
+                raise
+        finally:
+            yahoo_logger.removeHandler(capture)
+            yahoo_logger.propagate = previous_propagate
 
         if raw_data.empty:
+            diagnostic_text = " ".join(capture.messages).lower()
+
+            if (
+                "quote not found" in diagnostic_text
+                or "symbol not found" in diagnostic_text
+                or "http error 404" in diagnostic_text
+            ):
+                category = "SYMBOL_NOT_FOUND"
+                detail = (
+                    "Yahoo Finance no ha encontrado el símbolo "
+                    "solicitado."
+                )
+            elif (
+                "possibly delisted" in diagnostic_text
+                or "may be delisted" in diagnostic_text
+            ):
+                category = "POSSIBLE_DELISTING"
+                detail = (
+                    "Yahoo Finance indica una posible exclusión "
+                    "de cotización. No es una confirmación."
+                )
+            elif any(term in diagnostic_text for term in (
+                "timeout", "timed out", "connection",
+                "network", "name resolution", "dns",
+                "max retries",
+            )):
+                category = "CONNECTION_ERROR"
+                detail = (
+                    "No se pudo completar la conexión con Yahoo Finance."
+                )
+            else:
+                category = "EMPTY_RESPONSE"
+                detail = (
+                    "Yahoo Finance no ha devuelto observaciones "
+                    "y no se ha podido identificar la causa."
+                )
+
+            self.last_download_diagnostic = {
+                "category": category,
+                "detail": detail,
+                "provider_message": " | ".join(capture.messages),
+            }
             raise ValueError("Yahoo Finance no ha devuelto datos.")
 
         columns = [
@@ -147,7 +259,10 @@ class YahooFinanceProvider(DataProvider):
 
         final_data = pd.concat(results, ignore_index=True)
 
-        final_data["date"] = pd.to_datetime(final_data["date"])
+        final_data["date"] = pd.to_datetime(
+            final_data["date"],
+            errors="coerce"
+        )
 
         numeric_columns = columns[2:]
 
@@ -156,11 +271,8 @@ class YahooFinanceProvider(DataProvider):
                 final_data[column], errors="coerce"
             )
 
-        final_data = final_data.dropna(subset=["close"])
-
-        if final_data.empty:
-            raise ValueError("No hay precios de cierre válidos.")
-
+        # Se conservan las observaciones incompletas para que
+        # Data Quality pueda diagnosticarlas antes de procesarlas.
         return final_data.sort_values(
             ["ticker", "date"]
         ).reset_index(drop=True)
@@ -375,15 +487,9 @@ class TwelveDataProvider(DataProvider):
                 errors="coerce"
             )
 
-        final_data = final_data.dropna(
-            subset=["date", "close"]
-        )
-
-        if final_data.empty:
-            raise ValueError(
-                "No hay precios de cierre válidos en la respuesta."
-            )
-
+        # Se conservan fechas y precios ausentes o inválidos.
+        # El diagnóstico y la política de tratamiento corresponden
+        # al pipeline de calidad de datos.
         return final_data.sort_values(
             ["ticker", "date"]
         ).reset_index(drop=True)

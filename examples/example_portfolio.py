@@ -596,45 +596,530 @@ def collect_dates() -> tuple[str, str]:
 # 6. Download, preprocess and build financial models
 # ---------------------------------------------------------------------
 
+def recommend_data_policy(report, issues: list[str]) -> str:
+    """
+    Recomienda un tratamiento según la naturaleza de las incidencias.
+
+    forward_fill solo se recomienda cuando los cierres ausentes
+    son el único problema crítico.
+    """
+
+    if not issues:
+        return "drop"
+
+    missing_close = report.missing_by_column.get("close", 0)
+
+    other_critical_missing = sum(
+        report.missing_by_column.get(column, 0)
+        for column in (
+            "ticker",
+            "date",
+            "open",
+            "high",
+            "low",
+            "volume",
+        )
+    )
+
+    has_other_integrity_issues = any((
+        report.invalid_date_rows,
+        report.duplicate_rows,
+        report.non_positive_close_rows,
+        report.negative_volume_rows,
+        report.invalid_ohlc_rows,
+        any(report.invalid_numeric_by_column.values()),
+        any(report.infinite_by_column.values()),
+    ))
+
+    if (
+        missing_close > 0
+        and other_critical_missing == 0
+        and not has_other_integrity_issues
+    ):
+        return "forward_fill"
+
+    return "drop"
+
+
+def build_data_quality_report(
+    pipeline: DataPipeline,
+    raw_data: pd.DataFrame,
+    tickers: list[str],
+    recommendation: str,
+    decision: str,
+    result: pd.DataFrame | None = None,
+    error: str | None = None,
+) -> str:
+    """Construye el informe independiente de calidad de datos financieros."""
+
+    initial_report = pipeline.last_quality_report
+    post_report = pipeline.last_post_quality_report
+    summary = pipeline.last_processing_summary or {}
+
+    lines = [
+        "# Informe de calidad de datos financieros",
+        "",
+        "## Configuración",
+        "",
+        f"- Activos solicitados: {', '.join(tickers)}.",
+        f"- Observaciones descargadas: {len(raw_data)}.",
+        f"- Recomendación inicial: **{recommendation}**.",
+        f"- Decisión del usuario: **{decision}**.",
+        f"- Política aplicada: **{summary.get('policy', decision)}**.",
+        "",
+        "## Diagnóstico inicial",
+        "",
+    ]
+
+    if initial_report is not None:
+        lines.append(initial_report.to_markdown())
+    else:
+        lines.append("No se pudo completar el diagnóstico inicial.")
+
+    initial_issues = (
+        summary.get("initial_issues")
+        or pipeline.last_quality_issues
+    )
+
+    lines.extend([
+        "",
+        "### Incidencias iniciales",
+        "",
+    ])
+
+    if initial_issues:
+        lines.extend(f"- {issue}" for issue in initial_issues)
+    else:
+        lines.append("No se detectaron incidencias críticas.")
+
+    lines.extend([
+        "",
+        "## Cobertura y alineación temporal",
+        "",
+    ])
+
+    if {"ticker", "date"}.issubset(raw_data.columns):
+        temporal = raw_data[["ticker", "date"]].copy()
+        temporal["ticker"] = (
+            temporal["ticker"].astype("string").str.strip().str.upper()
+        )
+        temporal["date"] = pd.to_datetime(
+            temporal["date"], errors="coerce"
+        )
+
+        date_sets = {}
+        for ticker in tickers:
+            dates = set(
+                temporal.loc[
+                    temporal["ticker"].eq(ticker.upper())
+                    & temporal["date"].notna(),
+                    "date",
+                ].unique()
+            )
+            date_sets[ticker] = dates
+            lines.append(
+                f"- {ticker}: {len(dates)} fechas válidas."
+            )
+
+        if date_sets:
+            common_dates = set.intersection(*date_sets.values())
+            union_dates = set.union(*date_sets.values())
+            lines.extend([
+                "",
+                f"- Fechas comunes a todos los activos: {len(common_dates)}.",
+                f"- Fechas distintas en el conjunto: {len(union_dates)}.",
+            ])
+
+            if union_dates:
+                lines.append(
+                    f"- Cobertura común sobre la unión temporal: "
+                    f"{len(common_dates) / len(union_dates):.2%}."
+                )
+    else:
+        lines.append("No están disponibles las columnas ticker y date.")
+
+    lines.extend([
+        "",
+        "## Resultado del tratamiento",
+        "",
+    ])
+
+    if summary:
+        lines.extend([
+            f"- Filas recibidas: {summary.get('rows_received', 0)}.",
+            f"- Filas resultantes: {summary.get('rows_returned', 0)}.",
+            f"- Filas eliminadas: {summary.get('rows_removed', 0)}.",
+            f"- Cierres completados: {summary.get('close_values_filled', 0)}.",
+            f"- Porcentaje inicial de datos faltantes: "
+            f"{summary.get('missing_percentage', 0):.2f}%.",
+            f"- Completitud inicial: "
+            f"{summary.get('completeness_percentage', 0):.2f}%.",
+            f"- Cálculos financieros permitidos: "
+            f"{'Sí' if summary.get('calculations_allowed') else 'No'}.",
+        ])
+    else:
+        lines.append("No se completó el tratamiento.")
+
+    if post_report is not None:
+        lines.extend([
+            "",
+            "### Diagnóstico posterior",
+            "",
+            post_report.to_markdown(),
+            "",
+            "### Incidencias restantes",
+            "",
+        ])
+
+        remaining_issues = summary.get("remaining_issues", [])
+
+        if remaining_issues:
+            lines.extend(
+                f"- {issue}" for issue in remaining_issues
+            )
+        else:
+            lines.append(
+                "No permanecen incidencias críticas detectadas."
+            )
+
+    if result is not None:
+        lines.append(
+            f"- Observaciones disponibles para el análisis: {len(result)}."
+        )
+
+    if error:
+        lines.extend([
+            "",
+            "## Incidencia que impidió continuar",
+            "",
+            error,
+        ])
+
+    lines.extend([
+        "",
+        "## Criterios metodológicos",
+        "",
+        "- No se utiliza interpolación lineal.",
+        "- No se crean fechas ni observaciones artificiales.",
+        "- El relleno, cuando se selecciona, afecta únicamente a close "
+        "y como máximo a una observación consecutiva por activo.",
+        "- La alineación de rendimientos de la cartera mantiene "
+        "el comportamiento existente.",
+        "- Los datos conservados con incidencias no se utilizan "
+        "para cálculos financieros.",
+        "",
+    ])
+
+    return "\n".join(lines)
+
+
 def download_data(
     provider,
     provider_name: str,
     tickers: list[str],
     start: str,
     end: str,
-) -> pd.DataFrame:
-    print_header("DESCARGA Y PREPROCESAMIENTO")
+    output_dir: Path,
+) -> tuple[pd.DataFrame, dict]:
+    """Descarga, inspecciona y trata los datos financieros."""
+
+    import logging
+    import warnings
+
+    print_header("DESCARGA Y CALIDAD DE DATOS")
 
     print(f"Proveedor: {provider_name}")
     print(f"Activos: {', '.join(tickers)}")
-    print(
-        f"Periodo: {format_date(start)} a {format_date(end)}"
-    )
+    print(f"Periodo: {format_date(start)} a {format_date(end)}")
 
     pipeline = DataPipeline(provider)
 
-    import warnings
 
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message=r".*inplace.*",
-            category=Warning,
+    try:
+        pass
+
+        with warnings.catch_warnings():
+            warnings.filterwarnings(
+                "ignore",
+                message=r".*inplace.*",
+                category=Warning,
+            )
+
+            raw_data = pipeline.download_raw(
+                tickers=tickers,
+                start=start,
+                end=end,
+            )
+
+    except Exception as error:
+        empty_data = pd.DataFrame(columns=["ticker", "date"])
+
+        diagnostic = pipeline.last_download_diagnostic or {}
+        category = diagnostic.get("category", "PROVIDER_ERROR")
+        detail = diagnostic.get(
+            "detail",
+            "No se pudo determinar la causa de la descarga fallida.",
         )
-        data = pipeline.run(tickers=tickers, start=start, end=end)
+        provider_message = diagnostic.get("provider_message", "")
 
-    if data.empty:
-        raise ValueError("La descarga no ha producido datos.")
+        messages = {
+            "SYMBOL_NOT_FOUND": (
+                "Yahoo Finance no ha encontrado el símbolo solicitado. "
+                "Comprueba que el ticker sea correcto."
+            ),
+            "POSSIBLE_DELISTING": (
+                "Yahoo Finance indica que el símbolo podría estar "
+                "excluido de cotización. Esto no confirma su exclusión."
+            ),
+            "CONNECTION_ERROR": (
+                "No se pudo completar la conexión con el proveedor. "
+                "Comprueba tu conexión y vuelve a intentarlo."
+            ),
+            "EMPTY_RESPONSE": (
+                f"{provider_name} no ha devuelto observaciones para "
+                "los activos y el periodo solicitados. "
+                "La causa no ha podido determinarse."
+            ),
+            "PROVIDER_ERROR": (
+                f"Se ha producido un error durante la descarga mediante "
+                f"{provider_name}. Consulta el informe de diagnóstico."
+            ),
+        }
 
-    available = set(data["ticker"].unique())
-    missing = sorted(set(tickers) - available)
-
-    if missing:
-        raise ValueError(
-            "No se han recibido datos para: " + ", ".join(missing)
+        failure_type = category
+        user_message = messages.get(
+            category,
+            messages["PROVIDER_ERROR"],
         )
 
-    return data
+        pipeline.last_quality_issues = [
+            f"{failure_type}: no se recibieron datos para inspeccionar."
+        ]
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        report_path = output_dir / "data_quality_report.md"
+
+        report_text = build_data_quality_report(
+            pipeline=pipeline,
+            raw_data=empty_data,
+            tickers=tickers,
+            recommendation="No aplicable",
+            decision="Descarga fallida; análisis detenido.",
+            error=(
+                f"{failure_type}. {detail} "
+                f"Error técnico: {type(error).__name__}: {error}. "
+                f"Mensaje del proveedor: "
+                f"{provider_message or 'No disponible'}"
+            ),
+        )
+
+        report_path.write_text(report_text, encoding="utf-8")
+
+        print_header("DESCARGA NO DISPONIBLE")
+        print_error(user_message)
+        print_info(
+            f"Informe de diagnóstico generado: {report_path.name}"
+        )
+
+        raise ValueError(user_message) from error
+
+    finally:
+        pass
+
+    inspection = pipeline.inspect(raw_data)
+    report = inspection["report"]
+    issues = inspection["issues"]
+
+    if issues:
+        print_header("DIAGNÓSTICO DE CALIDAD DE DATOS")
+
+        print_table(
+            "Indicadores generales",
+            ["Indicador", "Resultado"],
+            [
+                ("Observaciones recibidas", len(raw_data)),
+                ("Celdas incompletas", report.missing_cells),
+                ("Datos faltantes", f"{report.missing_percentage:.2f}%"),
+                ("Completitud", f"{report.completeness_percentage:.2f}%"),
+                ("Incidencias detectadas", len(issues)),
+            ],
+        )
+
+        print_table(
+            "Incidencias detectadas",
+            ["N.º", "Descripción"],
+            [
+                (index + 1, issue)
+                for index, issue in enumerate(issues)
+            ],
+        )
+
+        recommendation = recommend_data_policy(report, issues)
+
+        print_warning(
+            "Se requiere una decisión antes de continuar con el análisis."
+        )
+
+        recommendation_labels = {
+            "drop": "eliminar observaciones incompletas o inválidas",
+            "forward_fill": (
+                "completar como máximo un cierre consecutivo "
+                "por activo con el último cierre disponible"
+            ),
+        }
+
+        print_success(
+            "Recomendación del sistema: "
+            f"{recommendation_labels.get(recommendation, recommendation)}."
+        )
+
+        if recommendation == "forward_fill":
+            recommended_option = (
+                "Completar como máximo un cierre consecutivo por activo "
+                "con el último cierre disponible (recomendado)."
+            )
+        else:
+            recommended_option = (
+                "Eliminar registros incompletos o inválidos "
+                "(recomendado; no inventa precios)."
+            )
+
+        options = {"1": recommended_option}
+
+        missing_close = report.missing_by_column.get("close", 0)
+
+        only_missing = (
+            not report.invalid_date_rows
+            and not report.duplicate_rows
+            and not report.non_positive_close_rows
+            and not report.negative_volume_rows
+            and not report.invalid_ohlc_rows
+            and not any(report.invalid_numeric_by_column.values())
+            and not any(report.infinite_by_column.values())
+        )
+
+        other_missing = sum(
+            report.missing_by_column.get(column, 0)
+            for column in (
+                "ticker", "date", "open", "high", "low", "volume"
+            )
+        )
+
+        if only_missing and missing_close and not other_missing:
+            options["2"] = (
+                "Completar como máximo un cierre consecutivo por activo "
+                "con el último cierre disponible."
+            )
+            options["3"] = (
+                "Conservar los datos para inspección. "
+                "No se ejecutarán cálculos financieros."
+            )
+            options["4"] = "Detener el análisis."
+
+            selected = ask_choice(
+                "¿Cómo deseas tratar los datos?",
+                options,
+            )
+
+            policy_map = {
+                "1": "drop",
+                "2": "forward_fill",
+                "3": "preserve",
+                "4": "strict",
+            }
+        else:
+            options["2"] = "Detener el análisis."
+
+            selected = ask_choice(
+                "¿Cómo deseas tratar los datos?",
+                options,
+            )
+
+            policy_map = {
+                "1": "drop",
+                "2": "strict",
+            }
+
+        policy = policy_map[selected]
+        decision = options[selected]
+
+    else:
+        recommendation = "No se requiere tratamiento"
+        policy = "drop"
+        decision = (
+            "Continuación automática: no se detectaron "
+            "incidencias críticas."
+        )
+
+        print_success(
+            "No se han detectado incidencias críticas. "
+            "Se continúa automáticamente."
+        )
+
+    try:
+        data = pipeline.process_raw(
+            raw_data,
+            missing_policy=policy,
+            recommendation=recommendation,
+            decision=decision,
+        )
+
+        available = set(
+            data["ticker"].dropna().astype(str).str.upper().unique()
+        )
+
+        missing = sorted(
+            set(ticker.upper() for ticker in tickers) - available
+        )
+
+        if missing:
+            raise ValueError(
+                "No quedan observaciones válidas para los activos: "
+                + ", ".join(missing)
+            )
+
+        summary = pipeline.last_processing_summary
+
+        report_text = build_data_quality_report(
+            pipeline=pipeline,
+            raw_data=raw_data,
+            tickers=tickers,
+            recommendation=recommendation,
+            decision=decision,
+            result=data,
+        )
+
+        report_path = output_dir / "data_quality_report.md"
+        report_path.write_text(report_text, encoding="utf-8")
+
+        if not summary.get("calculations_allowed", False):
+            raise ValueError(
+                "Los datos se han conservado para inspección, pero "
+                "contienen incidencias que impiden construir la cartera. "
+                f"Consulta {report_path.name}."
+            )
+
+        print_success(
+            f"Validación completada. Informe: {report_path.name}"
+        )
+
+        return data, summary
+
+    except Exception as error:
+        report_text = build_data_quality_report(
+            pipeline=pipeline,
+            raw_data=raw_data,
+            tickers=tickers,
+            recommendation=recommendation,
+            decision=decision,
+            error=f"{type(error).__name__}: {error}",
+        )
+
+        report_path = output_dir / "data_quality_report.md"
+        report_path.write_text(report_text, encoding="utf-8")
+        raise
+
+
 
 
 def build_portfolio(
@@ -1443,6 +1928,7 @@ def generate_executive_summary(
     quality: dict | None,
     macro_results: dict | None = None,
     risk_adjusted: dict | None = None,
+    data_quality_summary: dict | None = None,
 ) -> str:
     lines = [
         "# Resumen ejecutivo — Análisis de cartera",
@@ -1557,6 +2043,24 @@ def generate_executive_summary(
             f"- Diagnóstico: {quality['message']}",
         ])
 
+    if data_quality_summary:
+        lines.extend([
+            "",
+            "## Calidad de los datos financieros",
+            "",
+            f"- Política aplicada: {data_quality_summary.get('policy', 'No disponible')}.",
+            f"- Filas recibidas: {data_quality_summary.get('rows_received', 0)}.",
+            f"- Filas utilizadas: {data_quality_summary.get('rows_returned', 0)}.",
+            f"- Filas eliminadas: {data_quality_summary.get('rows_removed', 0)}.",
+            f"- Cierres completados: {data_quality_summary.get('close_values_filled', 0)}.",
+            f"- Datos faltantes antes del tratamiento: "
+            f"{data_quality_summary.get('missing_percentage', 0):.2f}%.",
+            f"- Completitud inicial: "
+            f"{data_quality_summary.get('completeness_percentage', 0):.2f}%.",
+            "- El diagnóstico detallado, las decisiones y la validación posterior "
+            "se encuentran en data_quality_report.md.",
+        ])
+
     if macro_results:
         real = macro_results["real_performance"]
         lines.extend([
@@ -1640,12 +2144,13 @@ def main() -> None:
         start, end = collect_dates()
 
         # 6. Data acquisition and financial models
-        data = download_data(
+        data, data_quality_summary = download_data(
             provider,
             provider_name,
             tickers,
             start,
             end,
+            output_dir,
         )
 
         portfolio = build_portfolio(data, weights)
@@ -1716,6 +2221,7 @@ def main() -> None:
             quality_results,
             macro_results,
             risk_adjusted_results,
+            data_quality_summary,
         )
 
         console.print(

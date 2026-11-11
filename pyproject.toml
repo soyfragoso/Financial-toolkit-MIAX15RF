@@ -5,8 +5,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "financial-toolkit"
-version = "0.1.0"
-description = "Financial data analysis and Monte Carlo portfolio simulation toolkit"
+version = "1.2.2"
+description = "MIAX 15 Financial Powertool: Sharpe and Sortino analytics, data quality and integrity controls, and Monte Carlo portfolio simulation"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
