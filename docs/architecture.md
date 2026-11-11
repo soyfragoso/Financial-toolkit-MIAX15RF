@@ -301,6 +301,13 @@ The diagrams represent the package's principal components and their relationship
 4. Reports and plots provide analytical outputs.
 5. Monte Carlo simulation estimates possible future portfolio trajectories and risk measures.
 
+### 5.4 Index comparison workflow
+
+1. `data/benchmarks.py` translates a common index name (`SP500`, `IBEX35`...) into each provider's symbol (`^GSPC` in Yahoo Finance, the `SPY` ETF in Twelve Data).
+2. `download_index()` downloads it through the same `DataPipeline` used for assets and returns a `PriceSeries`.
+3. `Portfolio.compare_to_benchmark()` returns a `BenchmarkComparison` dataclass computed over the dates both series share.
+4. When the FRED analysis has downloaded CPIAUCSL, `compare_real_returns()` reuses `calculate_real_performance()` to compare portfolio and index in real terms.
+
 ## 6. Design principles
 
 ### Separation of concerns

@@ -31,13 +31,14 @@ def portfolio():
     return result
 
 
-def test_generates_three_figures(portfolio):
+def test_generates_all_figures(portfolio):
     figures = generate_portfolio_plots(portfolio, show=False)
 
     assert set(figures) == {
         "cumulative_returns",
         "correlation_matrix",
         "portfolio_evolution",
+        "returns_histogram",
     }
 
 
@@ -70,7 +71,24 @@ def test_portfolio_plots_report_method(portfolio):
         "cumulative_returns",
         "correlation_matrix",
         "portfolio_evolution",
+        "returns_histogram",
     }
+
+    for figure in figures.values():
+        plt.close(figure)
+
+
+def test_histogram_shows_mean_and_median(portfolio):
+    import matplotlib.pyplot as plt
+
+    figures = generate_portfolio_plots(portfolio, show=False)
+    labels = [
+        text.get_text()
+        for text in figures["returns_histogram"].axes[0].get_legend().get_texts()
+    ]
+
+    assert any(label.startswith("Media") for label in labels)
+    assert any(label.startswith("Mediana") for label in labels)
 
     for figure in figures.values():
         plt.close(figure)

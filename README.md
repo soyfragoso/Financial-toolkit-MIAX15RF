@@ -23,12 +23,14 @@ Su objetivo es facilitar un flujo de trabajo reproducible, desde la obtención d
 - **Datos macroeconómicos:** integración independiente con FRED para consultar PIB real (GDPC1), IPC (CPIAUCSL), desempleo (UNRATE), tipos de interés (FEDFUNDS) y rendimiento del bono del Tesoro a 10 años (GS10).
 - **Rentabilidad real:** cálculo de la evolución de la cartera ajustada por inflación mediante el IPC.
 - **Rentabilidad ajustada al riesgo:** cálculo de los ratios de Sharpe y Sortino de la cartera, con el tipo libre de riesgo de FRED (FEDFUNDS) o introducido por el usuario, y lectura automática de cada ratio.
+- **Comparación con índices:** descarga del S&P 500, Nasdaq 100, IBEX 35 o Euro Stoxx 50 con el mismo pipeline de precios (`download_index()`) y comparación con la cartera (`Portfolio.compare_to_benchmark()`): rentabilidad, volatilidad, drawdown, beta, correlación y si la cartera bate al índice. Si se ha ejecutado el análisis FRED, también en términos reales con el IPC.
 - **Descarga de múltiples activos:** consulta de varios tickers y normalización de los datos recibidos.
 - **Procesamiento y validación:** limpieza, preparación y validación de series temporales financieras.
 - **Análisis de activos:** construcción de objetos `PriceSeries` y cálculo de estadísticas financieras.
 - **Gestión de carteras:** creación de objetos `Portfolio`, asignación de ponderaciones y análisis conjunto de activos.
-- **Análisis de riesgo y rendimiento:** métricas descriptivas, rendimientos y relaciones entre activos.
-- **Simulación de Monte Carlo:** generación de trayectorias para activos individuales y carteras.
+- **Análisis de riesgo y rendimiento:** métricas descriptivas, rendimientos y relaciones entre activos; rentabilidad diaria media y mediana y máximo drawdown de la cartera.
+- **Simulación de Monte Carlo:** generación de trayectorias para activos individuales y carteras, mediante GBM o bootstrap histórico (`Portfolio.bootstrap()`, con opción de bloques).
+- **Histograma de rentabilidades:** distribución de rentabilidades diarias de la cartera con media, mediana y normal de referencia en `Portfolio.plots_report()`.
 - **Visualización:** gráficos de análisis y simulación.
 - **Informes:** generación de informes en Markdown y gráficos mediante `Portfolio.report()` y `Portfolio.plots_report()`.
 - **Comparación de proveedores:** contraste de datos obtenidos desde Yahoo Finance y Twelve Data.
@@ -412,12 +414,14 @@ Its purpose is to provide a reproducible workflow, from historical data retrieva
 - **Macroeconomic data:** independent FRED integration for real GDP (GDPC1), CPI (CPIAUCSL), unemployment (UNRATE), federal funds rate (FEDFUNDS), and 10-year Treasury yield (GS10).
 - **Real performance:** calculation of portfolio performance adjusted for inflation using CPI.
 - **Risk-adjusted return:** Sharpe and Sortino ratios for the portfolio, using the FRED risk-free rate (FEDFUNDS) or one entered by the user, with an automatic reading of each ratio.
+- **Index comparison:** download the S&P 500, Nasdaq 100, IBEX 35 or Euro Stoxx 50 through the same price pipeline (`download_index()`) and compare it with the portfolio (`Portfolio.compare_to_benchmark()`), also in real terms when the FRED analysis has run.
 - **Multiple asset downloads:** retrieval of several tickers and normalization of provider data.
 - **Data processing and validation:** cleaning, preparation, and validation of financial time series.
 - **Asset analysis:** `PriceSeries` objects and automatic financial statistics.
 - **Portfolio management:** `Portfolio` objects, asset weights, and combined portfolio analysis.
-- **Risk and return analysis:** descriptive metrics, returns, and relationships between assets.
-- **Monte Carlo simulation:** simulation paths for individual assets and portfolios.
+- **Risk and return analysis:** descriptive metrics, returns, and relationships between assets; portfolio mean and median daily return and maximum drawdown.
+- **Monte Carlo simulation:** simulation paths for individual assets and portfolios, using GBM or historical bootstrap (`Portfolio.bootstrap()`, with optional blocks).
+- **Return histogram:** portfolio daily return distribution with mean, median and a normal reference in `Portfolio.plots_report()`.
 - **Visualization:** analytical and simulation charts.
 - **Reporting:** Markdown reports and charts through `Portfolio.report()` and `Portfolio.plots_report()`.
 - **Provider comparison:** comparison of Yahoo Finance and Twelve Data data.

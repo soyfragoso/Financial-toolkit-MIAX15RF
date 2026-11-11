@@ -80,6 +80,42 @@ class PriceSeries:
         self.minimum = float(self.prices.min())
         self.maximum = float(self.prices.max())
 
+    @classmethod
+    def from_dataframe(cls, data: pd.DataFrame, ticker: str) -> "PriceSeries":
+        """
+        Crea un PriceSeries a partir del DataFrame estandarizado que
+        devuelven los proveedores (columnas ticker, date y close).
+
+        Funciona igual con cualquier proveedor porque todos comparten
+        el mismo esquema de salida.
+        """
+        if not isinstance(data, pd.DataFrame):
+            raise TypeError("Los datos deben estar en un DataFrame.")
+
+        missing = {"ticker", "date", "close"} - set(data.columns)
+
+        if missing:
+            raise ValueError(f"Faltan columnas obligatorias: {sorted(missing)}")
+
+        if not isinstance(ticker, str) or not ticker.strip():
+            raise ValueError("El ticker debe ser una cadena no vacía.")
+
+        symbol = ticker.strip().upper()
+        asset_data = data[
+            data["ticker"].astype(str).str.upper() == symbol
+        ].sort_values("date")
+
+        if asset_data.empty:
+            raise ValueError(f"No hay datos para {symbol}.")
+
+        prices = pd.Series(
+            asset_data["close"].to_numpy(dtype=float),
+            index=pd.DatetimeIndex(pd.to_datetime(asset_data["date"])),
+            name=symbol,
+        )
+
+        return cls(ticker=symbol, prices=prices)
+
     @property
     def dates(self) -> pd.DatetimeIndex:
         """Devuelve las fechas de observación."""

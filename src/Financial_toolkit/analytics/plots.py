@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
 
 from Financial_toolkit.models.portfolio import Portfolio
@@ -7,6 +8,7 @@ from Financial_toolkit.models.portfolio import Portfolio
 def generate_portfolio_plots(
     portfolio: Portfolio,
     show: bool = True,
+    benchmark=None,
 ) -> dict[str, plt.Figure]:
     """
     Genera visualizaciones del rendimiento y riesgo de una cartera.
@@ -15,6 +17,10 @@ def generate_portfolio_plots(
         - cumulative_returns: rentabilidad acumulada de los activos y cartera.
         - correlation_matrix: matriz de correlaciones entre activos.
         - portfolio_evolution: evolución del valor de la cartera.
+        - returns_histogram: distribución de rentabilidades diarias de la
+          cartera, con media, mediana y curva normal de referencia.
+        - benchmark_comparison: cartera frente a un índice (solo si se
+          pasa benchmark, un PriceSeries).
     """
 
     if not isinstance(portfolio, Portfolio):
@@ -120,6 +126,78 @@ def generate_portfolio_plots(
     fig_evolution.tight_layout()
 
     figures["portfolio_evolution"] = fig_evolution
+
+    # 4. Histograma de rentabilidades diarias de la cartera.
+    mean_return = float(portfolio_returns.mean())
+    median_return = float(portfolio_returns.median())
+    std_return = float(portfolio_returns.std(ddof=1)) if len(portfolio_returns) > 1 else 0.0
+
+    fig_histogram, ax_histogram = plt.subplots(figsize=(10, 5))
+
+    bins = min(50, max(10, len(portfolio_returns) // 5))
+
+    ax_histogram.hist(
+        portfolio_returns,
+        bins=bins,
+        density=True,
+        alpha=0.6,
+        edgecolor="white",
+        label="Rentabilidades diarias",
+    )
+
+    if std_return > 0:
+        x_values = np.linspace(
+            portfolio_returns.min(),
+            portfolio_returns.max(),
+            200,
+        )
+        normal_density = (
+            np.exp(-0.5 * ((x_values - mean_return) / std_return) ** 2)
+            / (std_return * np.sqrt(2 * np.pi))
+        )
+        ax_histogram.plot(
+            x_values,
+            normal_density,
+            color="black",
+            linewidth=1.5,
+            label="Normal de referencia",
+        )
+
+    ax_histogram.axvline(
+        mean_return,
+        color="tab:orange",
+        linewidth=2,
+        label=f"Media ({mean_return:.3%})",
+    )
+    ax_histogram.axvline(
+        median_return,
+        color="tab:green",
+        linewidth=2,
+        linestyle="--",
+        label=f"Mediana ({median_return:.3%})",
+    )
+
+    ax_histogram.set_title("Distribución de rentabilidades diarias de la cartera")
+    ax_histogram.set_xlabel("Rentabilidad diaria")
+    ax_histogram.set_ylabel("Densidad")
+    ax_histogram.xaxis.set_major_formatter(
+        plt.FuncFormatter(lambda value, _: f"{value:.1%}")
+    )
+    ax_histogram.legend()
+    ax_histogram.grid(True, alpha=0.3)
+    fig_histogram.tight_layout()
+
+    figures["returns_histogram"] = fig_histogram
+
+    if benchmark is not None:
+        from Financial_toolkit.analytics.benchmark import (
+            plot_benchmark_comparison,
+        )
+
+        figures["benchmark_comparison"] = plot_benchmark_comparison(
+            portfolio,
+            benchmark,
+        )
 
     if show:
         plt.show()

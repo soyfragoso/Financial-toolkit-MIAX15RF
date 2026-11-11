@@ -35,6 +35,16 @@ from Financial_toolkit.data.providers import (
     YahooFinanceProvider,
 )
 from Financial_toolkit.models.portfolio import Portfolio
+from Financial_toolkit.data.benchmarks import (
+    INDEX_NAMES,
+    INDEX_SYMBOLS,
+    download_index,
+    index_symbol,
+)
+from Financial_toolkit.analytics.benchmark import (
+    compare_real_returns,
+    plot_benchmark_comparison,
+)
 from Financial_toolkit.models.price_series import PriceSeries
 from Financial_toolkit.data.macro_pipeline import MacroDataPipeline
 from Financial_toolkit.data.macro_providers import FredDataProvider
@@ -711,6 +721,9 @@ def show_portfolio_statistics(portfolio: Portfolio) -> dict:
     annual_volatility = portfolio.volatility()
     returns = portfolio.returns()
     cumulative_return = float((1 + returns).prod() - 1)
+    mean_return = portfolio.mean_return()
+    median_return = portfolio.median_return()
+    maximum_drawdown = portfolio.maximum_drawdown()
     print_table(
         "Indicadores de la cartera",
         ["Indicador", "Resultado"],
@@ -718,6 +731,9 @@ def show_portfolio_statistics(portfolio: Portfolio) -> dict:
             ("Rentabilidad acumulada", format_percentage(cumulative_return)),
             ("Rentabilidad anualizada", format_percentage(annual_return)),
             ("Volatilidad anualizada", format_percentage(annual_volatility)),
+            ("Máximo drawdown", format_percentage(maximum_drawdown)),
+            ("Rentabilidad diaria media", f"{mean_return:.4%}"),
+            ("Rentabilidad diaria mediana", f"{median_return:.4%}"),
             ("Observaciones", f"{len(returns):,}"),
         ],
     )
@@ -725,6 +741,9 @@ def show_portfolio_statistics(portfolio: Portfolio) -> dict:
         "annual_return": annual_return,
         "annual_volatility": annual_volatility,
         "cumulative_return": cumulative_return,
+        "mean_return": mean_return,
+        "median_return": median_return,
+        "maximum_drawdown": maximum_drawdown,
         "observations": len(returns),
     }
 
@@ -801,12 +820,40 @@ def run_monte_carlo(
         minimum=0,
     )
 
-    simulator = portfolio.monte_carlo(
-        initial_value=initial_value,
-        days=days,
-        simulations=simulations,
-        seed=seed,
+    method = ask_choice(
+        "Método de simulación",
+        {
+            "1": "Monte Carlo GBM (rentabilidades normales correlacionadas)",
+            "2": "Bootstrap histórico (remuestrea días reales del histórico)",
+        },
     )
+
+    if method == "2":
+        block_size = ask_integer(
+            "Tamaño de bloque en días (1 = días independientes)",
+            default=1,
+            minimum=1,
+        )
+        method_name = (
+            "Bootstrap histórico"
+            if block_size == 1
+            else f"Bootstrap histórico por bloques de {block_size} días"
+        )
+        simulator = portfolio.bootstrap(
+            initial_value=initial_value,
+            days=days,
+            simulations=simulations,
+            block_size=block_size,
+            seed=seed,
+        )
+    else:
+        method_name = "Monte Carlo GBM"
+        simulator = portfolio.monte_carlo(
+            initial_value=initial_value,
+            days=days,
+            simulations=simulations,
+            seed=seed,
+        )
 
     trajectories = simulator.simulate()
     final_values = simulator.final_values()
@@ -822,6 +869,7 @@ def run_monte_carlo(
         "Resultados de la simulación Monte Carlo",
         ["Indicador", "Resultado"],
         [
+            ("Método", method_name),
             ("Capital inicial", format_currency(initial_value)),
             ("Valor final mediano", format_currency(final_values.median())),
             ("Percentil 5", format_currency(final_values.quantile(0.05))),
@@ -852,7 +900,7 @@ def run_monte_carlo(
         legend=False,
         alpha=0.35,
     )
-    axes[0].set_title("Trayectorias Monte Carlo")
+    axes[0].set_title(f"Trayectorias ({method_name})")
     axes[0].set_xlabel("Día de simulación")
     axes[0].set_ylabel("Valor de la cartera (USD)")
     axes[0].grid(alpha=0.25)
@@ -878,6 +926,7 @@ def run_monte_carlo(
     plt.close(figure)
 
     return {
+        "method": method_name,
         "initial_value": initial_value,
         "days": days,
         "simulations": simulations,
@@ -1434,6 +1483,162 @@ def run_risk_adjusted_analysis(
     }
 
 
+def run_benchmark_analysis(
+    portfolio: Portfolio,
+    provider,
+    provider_name: str,
+    start: str,
+    end: str,
+    output_dir: Path,
+    macro_results: dict | None = None,
+) -> dict | None:
+    """
+    Compara la cartera con un índice (por defecto, el S&P 500).
+
+    Descarga el índice con el mismo proveedor y DataPipeline que los
+    activos. Si el análisis macro ya descargó el IPC (CPIAUCSL), compara
+    además ambos en términos reales con calculate_real_performance.
+    """
+    print_header("COMPARACIÓN CON UN ÍNDICE")
+
+    if not ask_yes_no(
+        "¿Deseas comparar la cartera con un índice (S&P 500, IBEX 35...)?",
+        True,
+    ):
+        print("Comparación con índice omitida.")
+        return None
+
+    available = {}
+
+    for key in INDEX_SYMBOLS:
+        try:
+            symbol = index_symbol(key, provider)
+        except ValueError:
+            continue
+        available[str(len(available) + 1)] = (key, symbol)
+
+    choice = ask_choice(
+        f"Índices disponibles en {provider_name}",
+        {
+            option: f"{INDEX_NAMES[key]} ({symbol})"
+            for option, (key, symbol) in available.items()
+        },
+    )
+    key, symbol = available[choice]
+    index_name = INDEX_NAMES[key]
+
+    try:
+        print_info(f"Descargando {index_name} ({symbol})...")
+        benchmark = download_index(provider, start, end, key)
+        comparison = portfolio.compare_to_benchmark(benchmark)
+    except Exception as error:
+        print_warning(
+            f"No se pudo comparar con {index_name}: "
+            f"{type(error).__name__}: {error}"
+        )
+        return None
+
+    print_table(
+        f"Cartera frente a {index_name} ({symbol})",
+        ["Indicador", "Cartera", "Índice"],
+        [
+            ("Rentabilidad acumulada",
+             format_percentage(comparison.portfolio_return),
+             format_percentage(comparison.benchmark_return)),
+            ("Rentabilidad anualizada",
+             format_percentage(comparison.portfolio_annualized),
+             format_percentage(comparison.benchmark_annualized)),
+            ("Volatilidad anualizada",
+             format_percentage(comparison.portfolio_volatility),
+             format_percentage(comparison.benchmark_volatility)),
+            ("Máximo drawdown",
+             format_percentage(comparison.portfolio_max_drawdown),
+             format_percentage(comparison.benchmark_max_drawdown)),
+            ("Beta / correlación",
+             f"{comparison.beta:.2f} / {comparison.correlation:.2f}", "-"),
+        ],
+    )
+
+    if comparison.beats_benchmark:
+        print_success(
+            f"La cartera bate a {index_name}: "
+            f"{format_percentage(comparison.excess_return)} más acumulado."
+        )
+    else:
+        print_warning(
+            f"La cartera no bate a {index_name}: "
+            f"{format_percentage(-comparison.excess_return)} menos acumulado."
+        )
+
+    real_comparison = None
+    indicators = (macro_results or {}).get("indicators", {})
+
+    if "CPIAUCSL" in indicators:
+        initial_capital = macro_results["real_performance"]["initial_capital"]
+
+        try:
+            real_comparison = compare_real_returns(
+                portfolio,
+                benchmark,
+                indicators["CPIAUCSL"].values,
+                initial_capital,
+            )
+        except Exception as error:
+            print_warning(
+                "No se pudo comparar en términos reales: "
+                f"{type(error).__name__}: {error}"
+            )
+
+    if real_comparison is not None:
+        print_table(
+            "Frente al índice, descontando inflación (IPC EE. UU.)",
+            ["Indicador", "Cartera", "Índice"],
+            [
+                ("Rentabilidad real acumulada",
+                 format_percentage(real_comparison["portfolio_real_return"]),
+                 format_percentage(real_comparison["benchmark_real_return"])),
+                ("Valor final real",
+                 format_currency(real_comparison["portfolio_real_final_value"]),
+                 format_currency(real_comparison["benchmark_real_final_value"])),
+                ("¿Gana a la inflación?",
+                 "Sí" if real_comparison["portfolio_beats_inflation"] else "No",
+                 "Sí" if real_comparison["benchmark_beats_inflation"] else "No"),
+            ],
+        )
+    else:
+        print_info(
+            "Para comparar también en términos reales, activa antes el "
+            "análisis macroeconómico de FRED."
+        )
+
+    # Gráfico e informe actualizados con el índice.
+    figure = plot_benchmark_comparison(
+        portfolio,
+        benchmark,
+        f"{index_name} ({symbol})",
+    )
+    figure.savefig(
+        output_dir / "benchmark_comparison.png",
+        dpi=160,
+        bbox_inches="tight",
+    )
+    plt.close(figure)
+
+    (output_dir / "portfolio_report.md").write_text(
+        portfolio.report(benchmark=benchmark),
+        encoding="utf-8",
+    )
+
+    print_success("Gráfico de comparación e informe actualizados.")
+
+    return {
+        "index_name": index_name,
+        "symbol": symbol,
+        "comparison": comparison,
+        "real_comparison": real_comparison,
+    }
+
+
 def generate_executive_summary(
     portfolio: Portfolio,
     asset_statistics: dict,
@@ -1443,6 +1648,7 @@ def generate_executive_summary(
     quality: dict | None,
     macro_results: dict | None = None,
     risk_adjusted: dict | None = None,
+    benchmark_results: dict | None = None,
 ) -> str:
     lines = [
         "# Resumen ejecutivo — Análisis de cartera",
@@ -1464,6 +1670,11 @@ def generate_executive_summary(
         f"{portfolio_statistics['annual_return']:.2%}.",
         f"- Volatilidad anualizada: "
         f"{portfolio_statistics['annual_volatility']:.2%}.",
+        f"- Máximo drawdown: "
+        f"{portfolio_statistics['maximum_drawdown']:.2%}.",
+        f"- Rentabilidad diaria media / mediana: "
+        f"{portfolio_statistics['mean_return']:.4%} / "
+        f"{portfolio_statistics['median_return']:.4%}.",
     ])
 
     best_asset = max(
@@ -1526,6 +1737,7 @@ def generate_executive_summary(
             "",
             "## Escenarios Monte Carlo",
             "",
+            f"- Método: {monte_carlo.get('method', 'Monte Carlo GBM')}.",
             f"- Simulaciones: {monte_carlo['simulations']:,}.",
             f"- Horizonte: {monte_carlo['days']} días de negociación.",
             f"- Valor final mediano (USD): {monte_carlo['median']:,.2f}.",
@@ -1585,6 +1797,31 @@ def generate_executive_summary(
             lines.append(
                 f"- {series_id}: {latest:,.2f} "
                 f"(última observación: {latest_date})."
+            )
+
+    if benchmark_results:
+        comparison = benchmark_results["comparison"]
+        verdict = "bate" if comparison.beats_benchmark else "no bate"
+        lines.extend([
+            "",
+            f"## Frente a {benchmark_results['index_name']} "
+            f"({benchmark_results['symbol']})",
+            "",
+            f"- La cartera **{verdict}** al índice: "
+            f"{comparison.portfolio_return:.2%} frente a "
+            f"{comparison.benchmark_return:.2%} acumulado "
+            f"({comparison.excess_return:+.2%}).",
+            f"- Beta: {comparison.beta:.2f}. "
+            f"Correlación: {comparison.correlation:.2f}.",
+        ])
+
+        real = benchmark_results.get("real_comparison")
+
+        if real:
+            lines.append(
+                f"- En términos reales (IPC EE. UU.): cartera "
+                f"{real['portfolio_real_return']:.2%} frente a índice "
+                f"{real['benchmark_real_return']:.2%}."
             )
 
     if risk_adjusted:
@@ -1687,6 +1924,17 @@ def main() -> None:
             monte_carlo_results,
         )
 
+        # 11a. Comparison against a stock index (S&P 500 by default).
+        benchmark_results = run_benchmark_analysis(
+            portfolio,
+            provider,
+            provider_name,
+            start,
+            end,
+            output_dir,
+            macro_results,
+        )
+
         # 11b. Risk-adjusted return: Sharpe and Sortino ratios.
         risk_adjusted_results = run_risk_adjusted_analysis(
             portfolio,
@@ -1716,6 +1964,7 @@ def main() -> None:
             quality_results,
             macro_results,
             risk_adjusted_results,
+            benchmark_results,
         )
 
         console.print(

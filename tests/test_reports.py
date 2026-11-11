@@ -149,3 +149,24 @@ def test_report_warns_about_negative_annualized_return():
     report = generate_portfolio_report(portfolio)
 
     assert "rentabilidad anualizada histórica es negativa" in report
+
+
+def test_report_contains_new_statistics(portfolio):
+    report = generate_portfolio_report(portfolio)
+
+    assert "Máximo drawdown" in report
+    assert "Rentabilidad diaria media" in report
+    assert "Rentabilidad diaria mediana" in report
+
+
+
+def test_report_with_benchmark(portfolio):
+    dates = pd.date_range("2024-01-01", periods=100)
+    benchmark = PriceSeries("^GSPC", pd.Series(np.linspace(100, 101, 100), index=dates))
+
+    report = generate_portfolio_report(portfolio, benchmark=benchmark)
+
+    assert "## 3. Comparación con el índice (^GSPC)" in report
+    assert "La cartera bate al índice" in report
+    assert "## 4. Diagnóstico de riesgo" in report
+    assert "## 5. Metodología y limitaciones" in report
