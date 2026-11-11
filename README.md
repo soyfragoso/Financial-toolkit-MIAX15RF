@@ -1,6 +1,8 @@
-# MIAX 15 Financial Powertool
+# MIAX 15 Financial Powertool v1.2.2
 
-**Python toolkit for financial data analysis, portfolio management and Monte Carlo simulation.**
+**Sharpe & Sortino + Data Quality & Integrity Edition**
+
+Python toolkit for financial data analysis, portfolio management, data quality and integrity assessment, and Monte Carlo simulation.
 
 [Versión en español](#español) | [English version](#english)
 
@@ -11,7 +13,7 @@
 
 ## 1. Descripción
 
-**MIAX 15 Financial Powertool** es una herramienta desarrollada en Python para la descarga, procesamiento y análisis de datos financieros, la construcción y evaluación de carteras de inversión y la simulación de escenarios mediante el método de Monte Carlo.
+**MIAX 15 Financial Powertool v1.2.2 — Sharpe & Sortino + Data Quality & Integrity Edition** es una herramienta desarrollada en Python para la descarga, procesamiento y análisis de datos financieros, la construcción y evaluación de carteras de inversión y la simulación de escenarios mediante el método de Monte Carlo.
 
 El proyecto combina una biblioteca modular y reutilizable con una interfaz de terminal interactiva que guía al usuario a través del análisis de activos y carteras.
 
@@ -25,6 +27,8 @@ Su objetivo es facilitar un flujo de trabajo reproducible, desde la obtención d
 - **Rentabilidad ajustada al riesgo:** cálculo de los ratios de Sharpe y Sortino de la cartera, con el tipo libre de riesgo de FRED (FEDFUNDS) o introducido por el usuario, y lectura automática de cada ratio.
 - **Descarga de múltiples activos:** consulta de varios tickers y normalización de los datos recibidos.
 - **Procesamiento y validación:** limpieza, preparación y validación de series temporales financieras.
+- **Calidad e integridad de datos (v1.2.2):** diagnóstico de valores ausentes, NaN, infinitos, duplicados, fechas inválidas, precios no positivos e incoherencias OHLC; métricas de completitud por columna y activo.
+- **Tratamiento configurable de datos faltantes:** políticas `strict`, `drop`, `preserve` y `forward_fill`, con controles posteriores al tratamiento y bloqueo de cálculos cuando persisten incidencias críticas.
 - **Análisis de activos:** construcción de objetos `PriceSeries` y cálculo de estadísticas financieras.
 - **Gestión de carteras:** creación de objetos `Portfolio`, asignación de ponderaciones y análisis conjunto de activos.
 - **Análisis de riesgo y rendimiento:** métricas descriptivas, rendimientos y relaciones entre activos.
@@ -43,7 +47,8 @@ El proyecto utiliza una estructura `src/` y separa las responsabilidades en mód
 ```text
 Financial-toolkit-MIAX15RF/
 ├── docs/
-│   └── architecture.md
+│   ├── architecture.md
+│   └── release_notes_v1.2.2.md
 ├── examples/
 │   └── example_portfolio.py
 ├── src/
@@ -62,7 +67,8 @@ Financial-toolkit-MIAX15RF/
 │       │   ├── company_universe.py
 │       │   ├── pipeline.py
 │       │   ├── preprocessing.py
-│       │   └── providers.py
+│       │   ├── providers.py
+│       │   └── quality.py
 │       ├── models/
 │       │   ├── macro_series.py
 │       │   ├── portfolio.py
@@ -82,9 +88,9 @@ Financial-toolkit-MIAX15RF/
 
 | Módulo | Responsabilidad |
 |---|---|
-| `data` | Proveedores, descarga, pipeline y preprocesamiento |
+| `data` | Proveedores, descarga, pipeline, preprocesamiento y diagnóstico de calidad de datos |
 | `models` | Modelos `PriceSeries`, `MacroSeries` y `Portfolio` |
-| `analytics` | Informes y visualizaciones y ratio de Sharpe y Sortino |
+| `analytics` | Informes, visualizaciones y métricas de rendimiento ajustado al riesgo |
 | `simulation` | Simulación de Monte Carlo |
 | `utils` | Validaciones y utilidades |
 | `cli` | Interfaz de terminal, presentación y formato de resultados |
@@ -228,7 +234,8 @@ El flujo contempla:
 11. Consulta opcional de indicadores macroeconómicos de FRED.
 12. Cálculo de rentabilidad real ajustada por IPC, cuando hay datos disponibles.
 13. Cálculo opcional de los ratios de Sharpe y Sortino, con lectura automática de cada ratio.
-14. Elaboración del resumen ejecutivo y presentación del estado de calidad e integridad de las pruebas.
+14. Diagnóstico de calidad e integridad de los datos, selección del tratamiento de faltantes cuando proceda y verificación posterior.
+15. Elaboración del resumen ejecutivo y presentación del estado de calidad e integridad de las pruebas.
 
 Las opciones disponibles dependen de los datos obtenidos, del proveedor seleccionado y de la configuración de cada ejecución.
 
@@ -250,6 +257,7 @@ Entre los archivos que puede generar se encuentran:
 | `fred_indicators.csv` | Indicadores macroeconómicos de FRED, cuando están disponibles |
 | `real_performance.csv` | Evolución de la cartera ajustada por inflación |
 | `real_performance.png` | Visualización de la rentabilidad real |
+| `data_quality_report.md` | Diagnóstico de calidad, métricas de completitud y tratamiento de datos faltantes |
 | `executive_summary.md` | Resumen ejecutivo |
 
 También se generan gráficos individuales a partir de `Portfolio.plots_report()`.
@@ -328,6 +336,21 @@ El sistema incorpora controles automatizados para verificar, entre otros aspecto
 - Rechazo de precios de cierre no positivos.
 - Detección de valores numéricos infinitos.
 - Conservación de los datos originales durante el preprocesamiento.
+- Cuantificación de valores ausentes y porcentaje de datos faltantes por columna y ticker.
+- Detección de fechas inválidas, duplicados, valores no finitos, volúmenes negativos y precios de cierre no positivos.
+- Verificación de coherencia OHLC y diagnóstico de cobertura y alineación temporal entre activos.
+- Revisión posterior al tratamiento para comprobar si persisten incidencias críticas.
+
+El pipeline ofrece cuatro políticas configurables para gestionar datos faltantes:
+
+| Política | Comportamiento |
+|---|---|
+| `strict` | Rechaza el conjunto cuando se detectan incidencias de calidad que impiden continuar. |
+| `drop` | Elimina los registros incompletos o no utilizables según las reglas de validación. |
+| `preserve` | Conserva los datos para inspección; no permite utilizarlos para cálculos financieros mientras persistan incidencias críticas. |
+| `forward_fill` | Completa únicamente `close`, con un máximo de una observación consecutiva por ticker; no crea fechas ni completa OHLC o volumen. |
+
+La política se selecciona durante la ejecución cuando el diagnóstico detecta incidencias. El sistema vuelve a evaluar la calidad después del tratamiento y bloquea los cálculos si siguen presentes problemas críticos.
 
 Estos controles verifican la consistencia estructural y numérica de los datos recibidos. No constituyen una auditoría externa ni garantizan la exactitud de las fuentes originales.
 
@@ -345,10 +368,14 @@ Las pruebas automatizadas cubren los principales componentes:
 - Generación de informes y gráficos.
 - Universo estático de compañías incorporado en la versión 1.1.
 - Cálculo y validación de rentabilidad real ajustada por inflación.
+- Diagnóstico de valores ausentes, NaN, infinitos, duplicados, fechas inválidas y anomalías OHLC.
+- Políticas de tratamiento `strict`, `drop`, `preserve` y `forward_fill`, incluidos sus límites y validaciones posteriores.
+- Completitud por columna y ticker, cobertura temporal y alineación de fechas entre activos.
+- Diagnóstico de respuestas vacías y problemas de descarga de proveedores.
 
 ### Suite automatizada
 
-En la versión 1.2, la última ejecución validada de la suite automatizada completó **212 pruebas aprobadas**, sin fallos ni advertencias. El número de pruebas puede cambiar conforme evolucione el proyecto.
+En la versión 1.2.2, la última ejecución validada de la suite automatizada completó **321 pruebas aprobadas**, sin fallos ni advertencias. El número de pruebas puede cambiar conforme evolucione el proyecto.
 
 
 
@@ -400,7 +427,7 @@ Este proyecto declara la licencia MIT en su configuración de empaquetado (`pypr
 
 ## 1. Overview
 
-**MIAX 15 Financial Powertool** is a Python toolkit for financial data retrieval and processing, investment portfolio construction and analysis, and scenario generation through Monte Carlo simulation.
+**MIAX 15 Financial Powertool v1.2.2 — Sharpe & Sortino + Data Quality & Integrity Edition** is a Python toolkit for financial data retrieval and processing, investment portfolio construction and analysis, and scenario generation through Monte Carlo simulation.
 
 The project combines a modular, reusable library with an interactive terminal interface that guides users through asset and portfolio analysis.
 
@@ -414,6 +441,8 @@ Its purpose is to provide a reproducible workflow, from historical data retrieva
 - **Risk-adjusted return:** Sharpe and Sortino ratios for the portfolio, using the FRED risk-free rate (FEDFUNDS) or one entered by the user, with an automatic reading of each ratio.
 - **Multiple asset downloads:** retrieval of several tickers and normalization of provider data.
 - **Data processing and validation:** cleaning, preparation, and validation of financial time series.
+- **Data quality and integrity (v1.2.2):** diagnostics for missing values, NaN, infinities, duplicates, invalid dates, non-positive prices, and OHLC inconsistencies, including completeness metrics by column and ticker.
+- **Configurable missing-data handling:** `strict`, `drop`, `preserve`, and `forward_fill` policies, followed by post-treatment checks and calculation blocking when critical issues remain.
 - **Asset analysis:** `PriceSeries` objects and automatic financial statistics.
 - **Portfolio management:** `Portfolio` objects, asset weights, and combined portfolio analysis.
 - **Risk and return analysis:** descriptive metrics, returns, and relationships between assets.
@@ -431,9 +460,9 @@ The project follows a `src/` layout and separates responsibilities into modules:
 
 | Module | Responsibility |
 |---|---|
-| `data` | Data providers, downloads, pipeline, and preprocessing |
+| `data` | Providers, downloads, pipeline, preprocessing, and data quality diagnostics |
 | `models` | `PriceSeries`, `MacroSeries`, and `Portfolio` models |
-| `analytics` | Reports, visualizations and Sharpe and Sortino ratios |
+| `analytics` | Reports, visualizations, and risk-adjusted performance metrics |
 | `simulation` | Monte Carlo simulation |
 | `utils` | Validation and utilities |
 | `cli` | Terminal interface, presentation, and result formatting |
@@ -569,7 +598,8 @@ The workflow covers:
 11. Optional retrieval of FRED macroeconomic indicators.
 12. CPI-adjusted real performance calculation, when data is available.
 13. Optional Sharpe and Sortino ratio calculation, with an automatic reading of each ratio.
-14. Executive summary generation and test quality and integrity status.
+14. Data quality and integrity diagnostics, missing-data policy selection when required, and post-treatment validation.
+15. Executive summary generation and test quality and integrity status.
 
 Available options depend on retrieved data, the selected provider, and the configuration of each run.
 
@@ -591,6 +621,7 @@ Potential outputs include:
 | `fred_indicators.csv` | FRED macroeconomic indicators, when available |
 | `real_performance.csv` | Inflation-adjusted portfolio performance |
 | `real_performance.png` | Real performance visualization |
+| `data_quality_report.md` | Data quality diagnostics, completeness metrics, and missing-data treatment |
 | `executive_summary.md` | Executive summary |
 
 Individual charts can also be generated through `Portfolio.plots_report()`.
@@ -669,6 +700,21 @@ Automated controls verify, among other aspects:
 - Non-positive closing prices are rejected.
 - Infinite numeric values are detected.
 - Original data is preserved during preprocessing.
+- Missing values and missing-data percentages are quantified by column and ticker.
+- Invalid dates, duplicates, non-finite values, negative volume, and non-positive closing prices are diagnosed.
+- OHLC consistency and temporal coverage/alignment across assets are assessed.
+- A post-treatment review checks whether critical issues remain.
+
+The pipeline provides four configurable missing-data policies:
+
+| Policy | Behavior |
+|---|---|
+| `strict` | Rejects a dataset when quality issues prevent processing from continuing. |
+| `drop` | Removes incomplete or unusable records according to the validation rules. |
+| `preserve` | Retains data for inspection; financial calculations remain unavailable while critical issues persist. |
+| `forward_fill` | Fills only `close`, up to one consecutive observation per ticker; it does not create dates or fill OHLC or volume. |
+
+The policy is selected during execution when the diagnostic detects issues. Data quality is reassessed after treatment, and calculations are blocked if critical problems remain.
 
 These controls verify the structural and numerical consistency of received data. They do not constitute an external audit or guarantee the accuracy of the original data sources.
 
@@ -686,10 +732,14 @@ The automated tests cover the main system components:
 - Report and chart generation.
 - Static company universe introduced in version 1.1.
 - Calculation and validation of inflation-adjusted real performance.
+- Diagnostics for missing values, NaN, infinities, duplicates, invalid dates, and OHLC anomalies.
+- `strict`, `drop`, `preserve`, and `forward_fill` treatment policies, including policy limits and post-treatment validation.
+- Completeness by column and ticker, temporal coverage, and date alignment across assets.
+- Diagnostics for empty provider responses and download issues.
 
 ### Automated test suite
 
-In version 1.2, the latest validated automated test run completed **212 passing tests**, with no failures or warnings. The test count may change as the project evolves.
+In version 1.2.2, the latest validated automated test run completed **321 passing tests**, with no failures or warnings. The test count may change as the project evolves.
 
 
 
@@ -735,4 +785,4 @@ The project declares the MIT license in its packaging configuration (`pyproject.
 ---
 
 **MIAX 15 Financial Powertool**
-*Financial data analysis, portfolio management, and Monte Carlo simulation.*
+*Financial analysis, portfolio management, risk-adjusted performance, data quality, and Monte Carlo simulation.*
